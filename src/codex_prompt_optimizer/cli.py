@@ -21,11 +21,10 @@ from .config import (
 from .errors import PromptOptimizerError
 from .model import ModelConfig
 from .workflow import (
-    finalize_best,
+    finalize_prompt,
     ingest_judgement,
     make_judge_pack,
     optimize_step,
-    propose_prompt,
     render_cases,
     run_target_model,
     validate_inputs,
@@ -216,41 +215,19 @@ def judge_pack(
 @app.command("ingest-judgement")
 def ingest_judgement_command(
     judgement_file: Path = typer.Argument(..., exists=True, readable=True),
-    workdir: Path = typer.Option(Path(".prompt-opt"), "--workdir"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+    out_dir: Path | None = typer.Option(None, "--out-dir"),
     target_pass_rate: float = typer.Option(1.0, "--target-pass-rate"),
     target_average_score_100: float = typer.Option(90.0, "--target-average-score-100"),
 ) -> None:
-    """Ingest Codex Judge scores and failure diagnostics."""
+    """Compute metrics for Codex Judge scores and optionally write enriched judgement JSON."""
     _echo_json(
         ingest_judgement(
             judgement_file,
-            workdir,
+            out=out,
+            out_dir=out_dir,
             target_pass_rate=target_pass_rate,
             target_average_score_100=target_average_score_100,
-        )
-    )
-
-
-@app.command()
-def propose(
-    prompt_template: Path = typer.Argument(..., exists=True, readable=True),
-    judgement_file: Path = typer.Argument(..., exists=True, readable=True),
-    out: Path = typer.Option(..., "--out", "-o"),
-    workdir: Path | None = typer.Option(Path(".prompt-opt"), "--workdir"),
-    candidate_id: str | None = typer.Option(None, "--candidate-id"),
-    parent_candidate_id: str | None = typer.Option(None, "--parent-candidate-id"),
-    max_failures: int = typer.Option(8, "--max-failures", min=1),
-) -> None:
-    """Generate the next prompt template from Codex Judge feedback."""
-    _echo_json(
-        propose_prompt(
-            prompt_template,
-            judgement_file,
-            out,
-            workdir=workdir,
-            candidate_id=candidate_id,
-            parent_candidate_id=parent_candidate_id,
-            max_failures=max_failures,
         )
     )
 
@@ -259,7 +236,11 @@ def propose(
 def optimize_step_command(
     prompt_template: Path = typer.Argument(..., exists=True, readable=True),
     variables_file: Path = typer.Argument(..., exists=True, readable=True),
-    workdir: Path = typer.Option(Path(".prompt-opt"), "--workdir"),
+    out_dir: Path = typer.Option(
+        Path(".prompt-opt"),
+        "--out-dir",
+        help="Directory for rendered cases, target outputs, and judge pack.",
+    ),
     candidate_id: str = typer.Option("initial", "--candidate-id"),
     model: str | None = typer.Option(None, "--model"),
     api_base: str | None = typer.Option(None, "--api-base"),
@@ -276,7 +257,7 @@ def optimize_step_command(
         optimize_step(
             prompt_template,
             variables_file,
-            workdir,
+            out_dir,
             candidate_id,
             _model_config(
                 model,
@@ -295,15 +276,17 @@ def optimize_step_command(
 
 @app.command()
 def finalize(
-    workdir: Path = typer.Option(Path(".prompt-opt"), "--workdir"),
+    prompt_template: Path = typer.Argument(..., exists=True, readable=True),
+    judgement_file: Path = typer.Argument(..., exists=True, readable=True),
     out_dir: Path = typer.Option(Path(".prompt-opt/final"), "--out-dir"),
     target_pass_rate: float = typer.Option(1.0, "--target-pass-rate"),
     target_average_score_100: float = typer.Option(90.0, "--target-average-score-100"),
 ) -> None:
-    """Select the best judged prompt and write final artifacts."""
+    """Write final artifacts for the prompt selected by the Codex master agent."""
     _echo_json(
-        finalize_best(
-            workdir,
+        finalize_prompt(
+            prompt_template,
+            judgement_file,
             out_dir,
             target_pass_rate=target_pass_rate,
             target_average_score_100=target_average_score_100,

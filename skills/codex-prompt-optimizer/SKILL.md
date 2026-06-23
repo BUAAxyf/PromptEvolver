@@ -1,15 +1,17 @@
 ---
 name: codex-prompt-optimizer
-description: Use when Codex needs to optimize a Mustache prompt template with a JSON multi-case variables file by orchestrating the local `codex-prompt-opt` CLI, judging target model outputs, writing structured `judgement.json`, ingesting scores, proposing the next prompt template, and finalizing the best prompt without using Codex as the target model executor.
+description: Use when Codex needs to optimize a Mustache prompt template with a JSON multi-case variables file by orchestrating the local `codex-prompt-opt` CLI, dispatching parallel judge subagents, aggregating scores and failure analysis, rewriting the prompt template as master agent, and logging every iteration without using Codex as the target model executor.
 ---
 
 # Codex Prompt Optimizer
 
 ## Role Split
 
-- Treat the CLI as the target-model runner and prompt-template optimizer.
-- Treat Codex as the workflow orchestrator, Judge, and failure analyst.
+- Treat the CLI as a lightweight target-model runner and evaluation artifact generator.
+- Treat the Codex master agent as the workflow orchestrator and the only prompt-template editor.
+- Treat Codex subagents as multidimensional Judges and bad-case analysts.
 - Do not use Codex as the target model executor.
+- Do not let the CLI generate, rewrite, or patch prompt templates.
 - Do not edit the variables JSON unless the user explicitly asks for dataset maintenance. If cases or rubrics are inadequate, report that separately.
 - Optimize only the prompt template.
 
@@ -28,10 +30,21 @@ Use these terms consistently:
 
 They all refer to the full task produced by rendering the prompt template with one case's variables.
 
+## Required Reference
+
+Before dispatching judge subagents, read `references/judge-subagent-prompt.md` completely. The master agent must paste and substitute that reference prompt into each subagent task. Do not ask the subagent to open files, links, or paths.
+
 ## Workflow
 
 1. Read the prompt template and variables JSON to understand task intent, expected outputs, and rubric.
-2. Check target model configuration before calling the target model:
+2. Create or append an optimization log at `.prompt-opt/optimization_log.jsonl`. Each iteration must record at least:
+   - `candidate_id`
+   - full prompt text or prompt path plus SHA-256
+   - optimization strategy used for this generation
+   - subagent optimization suggestions
+   - evaluation metrics and failure summaries
+   - generated artifact paths
+3. Check target model configuration before calling the target model:
 
    ```bash
    codex-prompt-opt config show
@@ -51,38 +64,46 @@ They all refer to the full task produced by rendering the prompt template with o
    ```
 
    Do not print real API keys in responses or logs.
-3. Run validation:
+4. Run validation:
 
    ```bash
    codex-prompt-opt validate <prompt.md> <task.json>
    ```
 
-4. Run one target-model optimization step:
+5. Run one target-model evaluation step:
 
    ```bash
-   codex-prompt-opt optimize-step <prompt.md> <task.json> --workdir .prompt-opt --candidate-id initial --model "$DSPY_MODEL"
+   codex-prompt-opt optimize-step <prompt.md> <task.json> --out-dir .prompt-opt --candidate-id <candidate_id> --model "$DSPY_MODEL"
    ```
 
-5. Open the generated `judge_pack_<candidate_id>.json`.
-6. Judge every case using the task description, case expected value, case rubric, rendered prompt, and target output.
-7. Write `.prompt-opt/judgement.json` with the exact structure below.
-8. Ingest the judgement:
-
-   ```bash
-   codex-prompt-opt ingest-judgement .prompt-opt/judgement.json --workdir .prompt-opt
-   ```
-
-9. If thresholds are not met and budget remains, propose a next prompt:
-
-   ```bash
-   codex-prompt-opt propose .prompt-opt/prompts/<candidate_id>.md .prompt-opt/judgement.json --out .prompt-opt/prompts/<next_candidate_id>.md --workdir .prompt-opt --candidate-id <next_candidate_id> --parent-candidate-id <candidate_id>
-   ```
-
-10. Run `optimize-step` again with the new prompt and repeat.
-11. Finalize when thresholds are met or the budget is exhausted:
+   This command only renders cases, calls the target model, and writes `judge_pack_<candidate_id>.json`. It does not generate the next prompt.
+6. Open `judge_pack_<candidate_id>.json`.
+7. Dispatch judge subagents in parallel:
+   - Split cases into chunks sized for reliable review. Use as many chunks as are needed and spawn them in one tool round so the maximum available number can run concurrently.
+   - Do not ask the user for artificial permission before spawning subagents; this skill is the authorization for parallel Judge work.
+   - If the platform exposes `spawn_agent`, call it once per chunk with `agent_type="worker"` and a fully assembled message.
+   - If `spawn_agent` is unavailable, tell the user to enable multi-agent support and restart Codex.
+   - Pass only task description, current prompt template, and the bad cases/cases under review. Do not include local paths, model config, secrets, repository history, previous private analysis, or unrelated files.
+   - The subagent prompt must be assembled by the master from `references/judge-subagent-prompt.md`; the subagent must not be asked to inspect links or paths.
+8. Collect each subagent result, close the agent, parse JSON, and save the raw aggregate to `.prompt-opt/subagent_reviews_<candidate_id>.json`.
+9. Aggregate subagent case scores into `.prompt-opt/judgement_<candidate_id>.json` using the Judgement JSON Contract below.
+10. Ingest judgement metrics:
 
     ```bash
-    codex-prompt-opt finalize --workdir .prompt-opt --out-dir .prompt-opt/final
+    codex-prompt-opt ingest-judgement .prompt-opt/judgement_<candidate_id>.json --out-dir .prompt-opt
+    ```
+
+11. If thresholds are not met and budget remains, the master agent creates the next prompt template directly:
+    - Use the current prompt and aggregated subagent suggestions.
+    - Fix rules, decision logic, priority order, output contract, or ambiguity in the existing prompt.
+    - Do not add raw bad cases, case IDs, case-specific examples, or a growing failure list to the prompt.
+    - Preserve Mustache variables and task intent.
+    - Save the next prompt with a version suffix, for example `.prompt-opt/prompts/<next_candidate_id>.md`.
+12. Repeat `optimize-step -> subagent review -> judgement ingest -> master prompt rewrite` until both target pass rate and target average `score_100` are reached, or the iteration/budget limit is exhausted.
+13. Finalize the prompt selected by the master:
+
+    ```bash
+    codex-prompt-opt finalize <best_prompt.md> .prompt-opt/judgement_<best_candidate_id>.json --out-dir .prompt-opt/final
     ```
 
 ## Judgement JSON Contract
@@ -92,7 +113,7 @@ Write one judgement object per candidate:
 ```json
 {
   "schema_version": "1.0",
-  "candidate_id": "initial",
+  "candidate_id": "candidate_001",
   "judge": "codex",
   "case_judgements": [
     {
@@ -101,7 +122,7 @@ Write one judgement object per candidate:
       "score_100": 0,
       "rationale": "Why this score is correct.",
       "failure_tags": ["format_error", "missing_field"],
-      "improvement_advice": "Concrete prompt-template change advice."
+      "improvement_advice": "High-level rule or logic repair direction; do not add badcase examples."
     }
   ],
   "overall": {
@@ -118,7 +139,7 @@ Rules:
 - Use `binary_score=1` only when the target output satisfies the essential task requirements for that case.
 - Use `score_100` for quality gradient even when `binary_score` is `0`.
 - Keep `failure_tags` short and reusable, for example `format_error`, `missing_field`, `wrong_label`, `hallucination`, `unsupported_claim`, `incomplete_reasoning`, `constraint_violation`.
-- Make `improvement_advice` actionable for prompt-template rewriting.
+- Make `improvement_advice` a high-level prompt-template repair direction, not an instruction to append the bad case itself.
 
 ## Judge Criteria
 
@@ -132,10 +153,40 @@ Check:
 - Grounding in provided variables.
 - Absence of hallucinated or unsupported details.
 - Completeness and usefulness for the task.
+- Whether the current prompt's rules are too weak, ambiguous, contradictory, or in the wrong priority order.
 
-## Iteration Policy
+## Master Rewrite Policy
 
-- Continue until both target pass rate and target average `score_100` are reached, or the user-defined iteration/budget limit is exhausted.
-- Prefer one clear prompt-template change per iteration when judging failure patterns is ambiguous.
+- The master agent, not the CLI and not the subagents, writes the next prompt.
+- Subagent suggestions are advisory. The master must synthesize them into a compact rule-level change.
+- Do not optimize by adding a list of bad cases to the prompt.
+- Do not copy target outputs or expected labels into the prompt as examples unless the user explicitly asks for few-shot prompting.
+- Prefer changes to general rules, decision boundaries, conflict resolution, output schema, and priority order.
 - If failures point to missing or contradictory cases/rubrics, stop and report the data issue instead of silently changing the variables file.
-- At the end, summarize best candidate metrics, unresolved failure modes, final artifact paths, and whether thresholds were reached.
+
+## Logging Policy
+
+For every generation, append one JSON object to `.prompt-opt/optimization_log.jsonl` with at least:
+
+```json
+{
+  "schema_version": "1.0",
+  "candidate_id": "candidate_001",
+  "parent_candidate_id": null,
+  "prompt_path": ".prompt-opt/prompts/candidate_001.md",
+  "prompt_sha256": "<sha256>",
+  "strategy": "Initial evaluation of the baseline prompt.",
+  "subagent_review_path": ".prompt-opt/subagent_reviews_candidate_001.json",
+  "judgement_path": ".prompt-opt/judgement_candidate_001.json",
+  "metrics": {
+    "case_count": 0,
+    "passed_count": 0,
+    "pass_rate": 0.0,
+    "average_score_100": 0.0
+  },
+  "optimization_suggestions": [],
+  "artifact_paths": {}
+}
+```
+
+The log is owned by the master agent. The CLI does not need workspace state to maintain it.

@@ -1,8 +1,8 @@
 # Codex Prompt Optimizer
 
-Codex Prompt Optimizer is a local prompt optimization toolkit for a Codex-led workflow. The CLI runs repeatable automation: it validates a Mustache prompt template, renders JSON cases into task instances, calls the target model through DSPy, packages target outputs for Codex Judge review, ingests structured judgements, proposes the next prompt template, and finalizes the best prompt.
+Codex Prompt Optimizer is a local prompt optimization toolkit for a Codex-led workflow. The CLI runs repeatable automation: it validates a Mustache prompt template, renders JSON cases into task instances, calls the target model through DSPy, packages target outputs for Codex Judge review, ingests structured judgements, and writes final artifacts for the prompt selected by Codex.
 
-Codex is not the target model executor. Codex reads the target model outputs, acts as Judge, writes structured scores and failure analysis, and invokes the CLI for the next optimization step.
+Codex is not the target model executor. Codex reads the target model outputs, dispatches Judge subagents for multidimensional scoring and bad-case analysis, writes structured scores and failure analysis, rewrites the prompt template as the master agent, and invokes the CLI for the next evaluation step.
 
 ## Core Capabilities
 
@@ -10,8 +10,9 @@ Codex is not the target model executor. Codex reads the target model outputs, ac
 - Treat each rendered prompt as a task instance, also called a rendered prompt, prompt instantiation, or evaluation case/example.
 - Call the target model with DSPy in `run` and `optimize-step`.
 - Exchange Codex Judge results through JSON files instead of calling Codex from the CLI.
-- Optimize only the prompt template; the CLI never rewrites the variables file.
-- Stop by threshold and budget: target pass rate, target average `score_100`, and max iteration budget.
+- Keep prompt generation outside the CLI; the Codex master agent rewrites the prompt template from subagent guidance.
+- Optimize only the prompt template; the CLI never rewrites the variables file or appends bad cases to prompts.
+- Support master-agent stopping by threshold and budget: target pass rate, target average `score_100`, and max iteration budget.
 
 ## Environment Requirements
 
@@ -141,28 +142,29 @@ Package materials for Codex Judge:
 codex-prompt-opt judge-pack .prompt-opt/rendered_cases.jsonl .prompt-opt/target_outputs.jsonl examples/task.json --out .prompt-opt/judge_pack.json
 ```
 
-After Codex writes `judgement.json`, ingest it and propose the next prompt:
+After Codex writes `judgement.json`, ingest it:
 
 ```bash
-codex-prompt-opt ingest-judgement .prompt-opt/judgement.json --workdir .prompt-opt
-codex-prompt-opt propose examples/prompt.md .prompt-opt/judgement.json --out .prompt-opt/prompts/candidate_002.md --workdir .prompt-opt
+codex-prompt-opt ingest-judgement .prompt-opt/judgement.json --out-dir .prompt-opt
 ```
 
 Run one automated target-model step and produce a judge pack:
 
 ```bash
-codex-prompt-opt optimize-step examples/prompt.md examples/task.json --workdir .prompt-opt --candidate-id initial --model "$DSPY_MODEL"
+codex-prompt-opt optimize-step examples/prompt.md examples/task.json --out-dir .prompt-opt --candidate-id initial --model "$DSPY_MODEL"
 ```
 
-Finalize the best judged prompt:
+The CLI does not generate the next prompt. The Codex master agent aggregates subagent suggestions, edits the prompt template directly, records the iteration in `.prompt-opt/optimization_log.jsonl`, and then runs `optimize-step` again with the new prompt.
+
+Finalize the prompt selected by Codex:
 
 ```bash
-codex-prompt-opt finalize --workdir .prompt-opt --out-dir .prompt-opt/final
+codex-prompt-opt finalize .prompt-opt/prompts/best.md .prompt-opt/judgement_best.json --out-dir .prompt-opt/final
 ```
 
 ## Codex Skill
 
-The Codex Skill lives in `skills/codex-prompt-optimizer`. Use it when Codex should orchestrate this workflow, judge target model outputs, and write the structured `judgement.json` consumed by the CLI.
+The Codex Skill lives in `skills/codex-prompt-optimizer`. Use it when Codex should orchestrate this workflow, dispatch parallel Judge subagents, aggregate target-model output scores, write the structured `judgement.json` consumed by the CLI, rewrite the prompt as master agent, and maintain iteration logs.
 
 ## Directory Structure
 
