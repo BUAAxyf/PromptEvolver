@@ -57,6 +57,30 @@ The CLI automatically reads `.env` from the current working directory before tar
 
 When `DSPY_API_BASE` is set and `DSPY_MODEL` has no provider prefix, the CLI treats it as an OpenAI-compatible model and passes `openai/<DSPY_MODEL>` to DSPy/LiteLLM.
 
+View current model configuration:
+
+```bash
+codex-prompt-opt config show
+```
+
+Create a first-use local config file:
+
+```bash
+codex-prompt-opt config init
+```
+
+Update a model parameter:
+
+```bash
+codex-prompt-opt config set DSPY_MODEL DeepSeek-V4-Pro
+codex-prompt-opt config set DSPY_API_BASE https://example.com/v1
+codex-prompt-opt config set DSPY_API_KEY sk-...
+codex-prompt-opt config set DSPY__TEMPERATURE 0.1
+codex-prompt-opt config set DSPY__MAX_TOKENS 2048
+codex-prompt-opt config set DSPY__TIMEOUT_SECONDS 90
+codex-prompt-opt config set EVO_EVAL_ENABLE_THINKING true
+```
+
 ## Input Format
 
 Prompt templates use Mustache syntax:

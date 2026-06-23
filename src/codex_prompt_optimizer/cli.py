@@ -7,7 +7,17 @@ from typing import Any
 
 import typer
 
-from .config import env_bool, env_float, env_int, load_dotenv_file
+from .config import (
+    MODEL_CONFIG_FIELDS,
+    env_bool,
+    env_float,
+    env_int,
+    first_use_guidance,
+    init_model_config_file,
+    load_dotenv_file,
+    model_config_status,
+    set_model_config_value,
+)
 from .errors import PromptOptimizerError
 from .model import ModelConfig
 from .workflow import (
@@ -26,6 +36,8 @@ app = typer.Typer(
     help="Prompt optimization CLI for Codex Judge workflows.",
     no_args_is_help=True,
 )
+config_app = typer.Typer(help="View and modify target model configuration.")
+app.add_typer(config_app, name="config")
 
 
 def _echo_json(payload: Any) -> None:
@@ -44,7 +56,14 @@ def _model_config(
     load_dotenv_file()
     model_name = model or os.environ.get("DSPY_MODEL")
     if not model_name:
-        raise typer.BadParameter("model is required via --model or DSPY_MODEL")
+        missing_keys = ["DSPY_MODEL"]
+        if not os.environ.get(api_key_env):
+            missing_keys.append("DSPY_API_KEY")
+        guidance = "\n  ".join(first_use_guidance(missing_keys, Path(".env")))
+        raise typer.BadParameter(
+            "model is required via --model or DSPY_MODEL. "
+            f"First-time setup:\n  {guidance}"
+        )
     try:
         resolved_temperature = (
             temperature if temperature is not None else env_float("DSPY__TEMPERATURE")
@@ -70,6 +89,56 @@ def _model_config(
         max_tokens=resolved_max_tokens,
         timeout_seconds=resolved_timeout_seconds,
         enable_thinking=resolved_enable_thinking,
+    )
+
+
+@config_app.command("show")
+def config_show(
+    env_file: Path = typer.Option(Path(".env"), "--env-file"),
+    reveal_secrets: bool = typer.Option(False, "--reveal-secrets"),
+) -> None:
+    """Show model configuration, redacting secrets by default."""
+    _echo_json(model_config_status(env_file, reveal_secrets=reveal_secrets))
+
+
+@config_app.command("init")
+def config_init(
+    env_file: Path = typer.Option(Path(".env"), "--env-file"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    """Create a local model configuration file with placeholders."""
+    created = init_model_config_file(env_file, force=force)
+    status = model_config_status(env_file)
+    _echo_json(
+        {
+            "env_file": str(env_file),
+            "created": created,
+            "overwritten": created and force,
+            "message": "created configuration file"
+            if created
+            else "configuration file already exists; pass --force to overwrite",
+            "next_steps": status["next_steps"],
+        }
+    )
+
+
+@config_app.command("set")
+def config_set(
+    key: str = typer.Argument(..., help=f"One of: {', '.join(MODEL_CONFIG_FIELDS)}"),
+    value: str = typer.Argument(...),
+    env_file: Path = typer.Option(Path(".env"), "--env-file"),
+) -> None:
+    """Set one model configuration value in the env file."""
+    try:
+        set_model_config_value(env_file, key, value)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    _echo_json(
+        {
+            "env_file": str(env_file),
+            "updated": key,
+            "status": model_config_status(env_file)["values"].get(key, ""),
+        }
     )
 
 

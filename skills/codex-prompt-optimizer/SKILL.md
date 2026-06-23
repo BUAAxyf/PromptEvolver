@@ -31,35 +31,55 @@ They all refer to the full task produced by rendering the prompt template with o
 ## Workflow
 
 1. Read the prompt template and variables JSON to understand task intent, expected outputs, and rubric.
-2. Run validation:
+2. Check target model configuration before calling the target model:
+
+   ```bash
+   codex-prompt-opt config show
+   ```
+
+   If required or recommended values are missing, guide the user to configure them with:
+
+   ```bash
+   codex-prompt-opt config init
+   codex-prompt-opt config set DSPY_MODEL <model-name>
+   codex-prompt-opt config set DSPY_API_BASE <api-base-url>
+   codex-prompt-opt config set DSPY_API_KEY <api-key>
+   codex-prompt-opt config set DSPY__TEMPERATURE 0.1
+   codex-prompt-opt config set DSPY__MAX_TOKENS 2048
+   codex-prompt-opt config set DSPY__TIMEOUT_SECONDS 90
+   codex-prompt-opt config set EVO_EVAL_ENABLE_THINKING true
+   ```
+
+   Do not print real API keys in responses or logs.
+3. Run validation:
 
    ```bash
    codex-prompt-opt validate <prompt.md> <task.json>
    ```
 
-3. Run one target-model optimization step:
+4. Run one target-model optimization step:
 
    ```bash
    codex-prompt-opt optimize-step <prompt.md> <task.json> --workdir .prompt-opt --candidate-id initial --model "$DSPY_MODEL"
    ```
 
-4. Open the generated `judge_pack_<candidate_id>.json`.
-5. Judge every case using the task description, case expected value, case rubric, rendered prompt, and target output.
-6. Write `.prompt-opt/judgement.json` with the exact structure below.
-7. Ingest the judgement:
+5. Open the generated `judge_pack_<candidate_id>.json`.
+6. Judge every case using the task description, case expected value, case rubric, rendered prompt, and target output.
+7. Write `.prompt-opt/judgement.json` with the exact structure below.
+8. Ingest the judgement:
 
    ```bash
    codex-prompt-opt ingest-judgement .prompt-opt/judgement.json --workdir .prompt-opt
    ```
 
-8. If thresholds are not met and budget remains, propose a next prompt:
+9. If thresholds are not met and budget remains, propose a next prompt:
 
    ```bash
    codex-prompt-opt propose .prompt-opt/prompts/<candidate_id>.md .prompt-opt/judgement.json --out .prompt-opt/prompts/<next_candidate_id>.md --workdir .prompt-opt --candidate-id <next_candidate_id> --parent-candidate-id <candidate_id>
    ```
 
-9. Run `optimize-step` again with the new prompt and repeat.
-10. Finalize when thresholds are met or the budget is exhausted:
+10. Run `optimize-step` again with the new prompt and repeat.
+11. Finalize when thresholds are met or the budget is exhausted:
 
     ```bash
     codex-prompt-opt finalize --workdir .prompt-opt --out-dir .prompt-opt/final
@@ -119,4 +139,3 @@ Check:
 - Prefer one clear prompt-template change per iteration when judging failure patterns is ambiguous.
 - If failures point to missing or contradictory cases/rubrics, stop and report the data issue instead of silently changing the variables file.
 - At the end, summarize best candidate metrics, unresolved failure modes, final artifact paths, and whether thresholds were reached.
-

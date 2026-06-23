@@ -5,7 +5,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from codex_prompt_optimizer.cli import _model_config
-from codex_prompt_optimizer.config import parse_env_line
+from codex_prompt_optimizer.config import (
+    init_model_config_file,
+    model_config_status,
+    parse_env_line,
+    read_env_file,
+    set_model_config_value,
+)
 from codex_prompt_optimizer.model import dspy_model_name
 
 
@@ -52,6 +58,35 @@ class ConfigTests(unittest.TestCase):
     def test_dspy_model_name_prefixes_openai_compatible_models(self):
         self.assertEqual(dspy_model_name("DeepSeek-V4-Pro", "https://example.invalid/v1"), "openai/DeepSeek-V4-Pro")
         self.assertEqual(dspy_model_name("openai/gpt-4o", "https://example.invalid/v1"), "openai/gpt-4o")
+
+    def test_init_and_set_model_config_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env_file = Path(temp) / ".env"
+            self.assertTrue(init_model_config_file(env_file))
+            self.assertFalse(init_model_config_file(env_file))
+
+            set_model_config_value(env_file, "DSPY_MODEL", "DeepSeek-V4-Pro")
+            set_model_config_value(env_file, "DSPY_API_KEY", "secret-value")
+            set_model_config_value(env_file, "DSPY__MAX_TOKENS", "1024")
+
+            values = read_env_file(env_file)
+            self.assertEqual(values["DSPY_MODEL"], "DeepSeek-V4-Pro")
+            self.assertEqual(values["DSPY_API_KEY"], "secret-value")
+            self.assertEqual(values["DSPY__MAX_TOKENS"], "1024")
+
+            status = model_config_status(env_file)
+            self.assertEqual(status["values"]["DSPY_API_KEY"], "secr...alue")
+            self.assertEqual(status["missing_required"], [])
+
+    def test_set_rejects_invalid_model_config(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env_file = Path(temp) / ".env"
+            with self.assertRaises(ValueError):
+                set_model_config_value(env_file, "UNKNOWN", "value")
+            with self.assertRaises(ValueError):
+                set_model_config_value(env_file, "DSPY__MAX_TOKENS", "0")
+            with self.assertRaises(ValueError):
+                set_model_config_value(env_file, "EVO_EVAL_ENABLE_THINKING", "maybe")
 
 
 if __name__ == "__main__":
