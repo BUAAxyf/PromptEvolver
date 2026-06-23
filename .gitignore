@@ -13,5 +13,5 @@ venv/
 .env
 .env.*
 !.env.example
+.idea/
 .prompt-opt/
-

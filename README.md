@@ -35,15 +35,25 @@ source .venv/bin/activate
 python3 -m pip install -e .
 ```
 
+If the environment directory is named `venv`, activate it with:
+
+```bash
+source venv/bin/activate
+```
+
 ## Configuration
 
 The CLI reads model settings from command options or environment variables:
 
 - `DSPY_MODEL`: target model identifier passed to `dspy.LM`.
 - `DSPY_API_BASE`: optional API base URL.
-- `OPENAI_API_KEY`: default API key environment variable.
+- `DSPY_API_KEY`: default API key environment variable.
+- `DSPY__TEMPERATURE`: optional target-model temperature.
+- `DSPY__MAX_TOKENS`: optional max token budget.
+- `DSPY__TIMEOUT_SECONDS`: optional target-model request timeout.
+- `EVO_EVAL_ENABLE_THINKING`: optional boolean passed to compatible OpenAI-style backends as `extra_body.enable_thinking`.
 
-The `.env*` files in this repository contain placeholders only. Keep real secrets local.
+The CLI automatically reads `.env` from the current working directory before target model execution. The `.env*` files in this repository contain placeholders only. Keep real secrets local.
 
 ## Input Format
 
@@ -153,4 +163,3 @@ python3 -m compileall src tests
 ```
 
 For real model execution, configure `DSPY_MODEL` and credentials first.
-

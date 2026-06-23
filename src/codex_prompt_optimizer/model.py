@@ -11,9 +11,11 @@ from .errors import ModelExecutionError
 class ModelConfig:
     model: str
     api_base: str | None = None
-    api_key_env: str = "OPENAI_API_KEY"
+    api_key_env: str = "DSPY_API_KEY"
     temperature: float | None = None
     max_tokens: int | None = None
+    timeout_seconds: float | None = None
+    enable_thinking: bool | None = None
 
 
 class DspyTargetModel:
@@ -47,6 +49,10 @@ class DspyTargetModel:
             kwargs["temperature"] = self.config.temperature
         if self.config.max_tokens is not None:
             kwargs["max_tokens"] = self.config.max_tokens
+        if self.config.timeout_seconds is not None:
+            kwargs["timeout"] = self.config.timeout_seconds
+        if self.config.enable_thinking is not None:
+            kwargs["extra_body"] = {"enable_thinking": self.config.enable_thinking}
 
         try:
             self._lm = dspy.LM(self.config.model, **kwargs)
@@ -70,4 +76,3 @@ def _normalize_model_result(result: Any) -> str:
         if isinstance(value, str):
             return value
     return str(result)
-

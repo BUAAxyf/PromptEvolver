@@ -7,6 +7,7 @@ from typing import Any
 
 import typer
 
+from .config import env_bool, env_float, env_int, load_dotenv_file
 from .errors import PromptOptimizerError
 from .model import ModelConfig
 from .workflow import (
@@ -37,16 +38,38 @@ def _model_config(
     api_key_env: str,
     temperature: float | None,
     max_tokens: int | None,
+    timeout_seconds: float | None,
+    enable_thinking: bool | None,
 ) -> ModelConfig:
+    load_dotenv_file()
     model_name = model or os.environ.get("DSPY_MODEL")
     if not model_name:
         raise typer.BadParameter("model is required via --model or DSPY_MODEL")
+    try:
+        resolved_temperature = (
+            temperature if temperature is not None else env_float("DSPY__TEMPERATURE")
+        )
+        resolved_max_tokens = max_tokens if max_tokens is not None else env_int("DSPY__MAX_TOKENS")
+        resolved_timeout_seconds = (
+            timeout_seconds
+            if timeout_seconds is not None
+            else env_float("DSPY__TIMEOUT_SECONDS")
+        )
+        resolved_enable_thinking = (
+            enable_thinking
+            if enable_thinking is not None
+            else env_bool("EVO_EVAL_ENABLE_THINKING")
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     return ModelConfig(
         model=model_name,
         api_base=api_base or os.environ.get("DSPY_API_BASE"),
         api_key_env=api_key_env,
-        temperature=temperature,
-        max_tokens=max_tokens,
+        temperature=resolved_temperature,
+        max_tokens=resolved_max_tokens,
+        timeout_seconds=resolved_timeout_seconds,
+        enable_thinking=resolved_enable_thinking,
     )
 
 
@@ -77,15 +100,25 @@ def run(
     out: Path = typer.Option(Path("target_outputs.jsonl"), "--out", "-o"),
     model: str | None = typer.Option(None, "--model"),
     api_base: str | None = typer.Option(None, "--api-base"),
-    api_key_env: str = typer.Option("OPENAI_API_KEY", "--api-key-env"),
+    api_key_env: str = typer.Option("DSPY_API_KEY", "--api-key-env"),
     temperature: float | None = typer.Option(None, "--temperature"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
+    enable_thinking: bool | None = typer.Option(None, "--enable-thinking/--disable-thinking"),
 ) -> None:
     """Call the target model through DSPy for all rendered cases."""
     records = run_target_model(
         rendered_cases,
         out,
-        _model_config(model, api_base, api_key_env, temperature, max_tokens),
+        _model_config(
+            model,
+            api_base,
+            api_key_env,
+            temperature,
+            max_tokens,
+            timeout_seconds,
+            enable_thinking,
+        ),
     )
     _echo_json({"out": str(out), "case_count": len(records)})
 
@@ -161,9 +194,11 @@ def optimize_step_command(
     candidate_id: str = typer.Option("initial", "--candidate-id"),
     model: str | None = typer.Option(None, "--model"),
     api_base: str | None = typer.Option(None, "--api-base"),
-    api_key_env: str = typer.Option("OPENAI_API_KEY", "--api-key-env"),
+    api_key_env: str = typer.Option("DSPY_API_KEY", "--api-key-env"),
     temperature: float | None = typer.Option(None, "--temperature"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
+    enable_thinking: bool | None = typer.Option(None, "--enable-thinking/--disable-thinking"),
     target_pass_rate: float = typer.Option(1.0, "--target-pass-rate"),
     target_average_score_100: float = typer.Option(90.0, "--target-average-score-100"),
 ) -> None:
@@ -174,7 +209,15 @@ def optimize_step_command(
             variables_file,
             workdir,
             candidate_id,
-            _model_config(model, api_base, api_key_env, temperature, max_tokens),
+            _model_config(
+                model,
+                api_base,
+                api_key_env,
+                temperature,
+                max_tokens,
+                timeout_seconds,
+                enable_thinking,
+            ),
             target_pass_rate=target_pass_rate,
             target_average_score_100=target_average_score_100,
         )
@@ -209,4 +252,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

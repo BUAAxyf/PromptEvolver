@@ -100,6 +100,14 @@ def run_target_model(
                 "candidate_id": rendered.get("candidate_id", "unknown"),
                 "case_id": rendered["case_id"],
                 "target_model": model_config.model,
+                "model_settings": {
+                    "api_base": model_config.api_base,
+                    "api_key_env": model_config.api_key_env,
+                    "temperature": model_config.temperature,
+                    "max_tokens": model_config.max_tokens,
+                    "timeout_seconds": model_config.timeout_seconds,
+                    "enable_thinking": model_config.enable_thinking,
+                },
                 "created_at": utc_now_iso(),
                 "output_text": output,
             }
