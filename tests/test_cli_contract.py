@@ -23,6 +23,24 @@ class CliContractTests(unittest.TestCase):
         self.assertIn("Do not ask for files, links, paths", text)
         self.assertIn("dimension_scores", text)
 
+    def test_skill_reference_documents_input_json_format(self):
+        root = Path(__file__).resolve().parents[1]
+        skill = root / "skills/codex-prompt-optimizer/SKILL.md"
+        reference = root / "skills/codex-prompt-optimizer/references/input-json-format.md"
+        skill_text = skill.read_text(encoding="utf-8")
+        reference_text = reference.read_text(encoding="utf-8")
+
+        self.assertIn("references/input-json-format.md", skill_text)
+        for required_text in (
+            "| `task` | object | No |",
+            "| `globals` | object | No |",
+            "| `cases` | array<object> | Conditionally yes |",
+            "| `variables` | object | No |",
+            "Reserved case fields are",
+            "Effective render variables are `globals` merged with case variables",
+        ):
+            self.assertIn(required_text, reference_text)
+
 
 if __name__ == "__main__":
     unittest.main()
