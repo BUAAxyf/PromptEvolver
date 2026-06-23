@@ -1,0 +1,27 @@
+{
+  "task": {
+    "name": "Support request classification",
+    "rubric": "The model should return valid JSON. The label should match expected.label, and rationale should be grounded in the request."
+  },
+  "cases": [
+    {
+      "id": "billing_refund",
+      "variables": {
+        "request": "I was charged twice this month and need a refund."
+      },
+      "expected": {
+        "label": "billing"
+      }
+    },
+    {
+      "id": "login_issue",
+      "variables": {
+        "request": "I reset my password but still cannot sign in."
+      },
+      "expected": {
+        "label": "account_access"
+      }
+    }
+  ]
+}
+

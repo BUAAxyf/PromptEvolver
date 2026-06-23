@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Prompt Optimizer"
+  short_description: "Judge workflow for prompt optimization"
+  default_prompt: "Use $codex-prompt-optimizer to optimize this Mustache prompt with JSON cases."
