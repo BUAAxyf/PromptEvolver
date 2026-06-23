@@ -55,10 +55,18 @@ class DspyTargetModel:
             kwargs["extra_body"] = {"enable_thinking": self.config.enable_thinking}
 
         try:
-            self._lm = dspy.LM(self.config.model, **kwargs)
+            self._lm = dspy.LM(dspy_model_name(self.config.model, self.config.api_base), **kwargs)
         except Exception as exc:  # pragma: no cover - dependency/API compatibility path
             raise ModelExecutionError(f"failed to initialize dspy.LM: {exc}") from exc
         return self._lm
+
+
+def dspy_model_name(model: str, api_base: str | None = None) -> str:
+    if "/" in model:
+        return model
+    if api_base:
+        return f"openai/{model}"
+    return model
 
 
 def _normalize_model_result(result: Any) -> str:

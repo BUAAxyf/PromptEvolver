@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from codex_prompt_optimizer.cli import _model_config
 from codex_prompt_optimizer.config import parse_env_line
+from codex_prompt_optimizer.model import dspy_model_name
 
 
 class ConfigTests(unittest.TestCase):
@@ -47,6 +48,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.max_tokens, 2048)
         self.assertEqual(config.timeout_seconds, 90)
         self.assertTrue(config.enable_thinking)
+
+    def test_dspy_model_name_prefixes_openai_compatible_models(self):
+        self.assertEqual(dspy_model_name("DeepSeek-V4-Pro", "https://example.invalid/v1"), "openai/DeepSeek-V4-Pro")
+        self.assertEqual(dspy_model_name("openai/gpt-4o", "https://example.invalid/v1"), "openai/gpt-4o")
 
 
 if __name__ == "__main__":

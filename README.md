@@ -55,6 +55,8 @@ The CLI reads model settings from command options or environment variables:
 
 The CLI automatically reads `.env` from the current working directory before target model execution. The `.env*` files in this repository contain placeholders only. Keep real secrets local.
 
+When `DSPY_API_BASE` is set and `DSPY_MODEL` has no provider prefix, the CLI treats it as an OpenAI-compatible model and passes `openai/<DSPY_MODEL>` to DSPy/LiteLLM.
+
 ## Input Format
 
 Prompt templates use Mustache syntax:
@@ -144,6 +146,7 @@ The Codex Skill lives in `skills/codex-prompt-optimizer`. Use it when Codex shou
 src/codex_prompt_optimizer/     CLI implementation
 tests/                          Unit tests
 examples/                       Minimal prompt and JSON case examples
+examples/prompt_jxb_v*.md       JXB prompt iteration history
 skills/codex-prompt-optimizer/  Codex Skill for this workflow
 PLAN.md                         Original design plan
 ```
