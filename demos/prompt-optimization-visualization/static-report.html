@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>静报 Demo - 单页静态报告</title>
+  <style>
+    :root {
+      --ink: #11110e;
+      --paper: #fbf7ea;
+      --panel: #fffdf5;
+      --line: #11110e22;
+      --green: #24745a;
+      --red: #b84a32;
+      --blue: #1d5f86;
+      --gold: #b88a21;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: radial-gradient(circle at 20% 10%, #e9d08b55 0 16%, transparent 28%), var(--paper);
+      font-family: "Baskerville", "Songti SC", "STSong", serif;
+    }
+    .page {
+      width: min(1120px, calc(100% - 36px));
+      margin: 34px auto;
+      background: var(--panel);
+      border: 2px solid var(--ink);
+      box-shadow: 14px 14px 0 var(--ink);
+      padding: 34px;
+    }
+    header {
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      gap: 24px;
+      border-bottom: 3px double var(--ink);
+      padding-bottom: 22px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(34px, 5vw, 66px);
+      line-height: .95;
+      letter-spacing: 0;
+    }
+    .seal {
+      border: 2px solid var(--ink);
+      padding: 18px;
+      transform: rotate(1deg);
+      background: #f6ecd2;
+    }
+    .seal b { display: block; font-size: 40px; }
+    .seal span { font-size: 14px; line-height: 1.45; }
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin: 28px 0;
+    }
+    .step {
+      border: 1px solid var(--ink);
+      padding: 16px;
+      min-height: 154px;
+      background: linear-gradient(180deg, #fffdf5, #f5ead1);
+    }
+    .step h2 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+    .rate {
+      font-size: 36px;
+      line-height: 1;
+      margin: 12px 0;
+      font-weight: 700;
+    }
+    .bar {
+      height: 10px;
+      border: 1px solid var(--ink);
+      background: #efe3c5;
+      overflow: hidden;
+    }
+    .bar i {
+      display: block;
+      height: 100%;
+      background: var(--green);
+    }
+    .content {
+      display: grid;
+      grid-template-columns: 1.15fr .85fr;
+      gap: 22px;
+      align-items: start;
+    }
+    .box {
+      border-top: 2px solid var(--ink);
+      padding-top: 14px;
+    }
+    .box h3 {
+      margin: 0 0 12px;
+      font-size: 25px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      background: white;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      border-bottom: 2px solid var(--ink);
+      background: #f0e2bf;
+    }
+    .pill {
+      display: inline-block;
+      padding: 3px 7px;
+      border: 1px solid var(--ink);
+      background: #fff2cc;
+      margin: 2px 2px 2px 0;
+      white-space: nowrap;
+    }
+    .links {
+      display: grid;
+      gap: 10px;
+    }
+    .linkrow {
+      border: 1px solid var(--line);
+      padding: 12px;
+      background: #fff;
+    }
+    .linkrow b { display: block; margin-bottom: 4px; }
+    .print-note {
+      margin-top: 22px;
+      font-size: 14px;
+      border-left: 8px solid var(--blue);
+      padding: 12px 14px;
+      background: #eef6f8;
+    }
+    @media (max-width: 860px) {
+      header, .timeline, .content { grid-template-columns: 1fr; }
+      .page { box-shadow: none; padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <article class="page">
+    <header>
+      <div>
+        <h1>静报：Prompt 优化单页审核报告</h1>
+        <p>面向最快落地：把现有 JSON/JSONL 产物压成一张可读、可打印、可归档的 HTML。</p>
+      </div>
+      <aside class="seal">
+        <b>97.84%</b>
+        <span>candidate_003 达标。适合汇报和快速人工复核，不追求复杂交互。</span>
+      </aside>
+    </header>
+
+    <section class="timeline" aria-label="candidate timeline">
+      <div class="step">
+        <h2>candidate_001</h2>
+        <div class="rate">81.62%</div>
+        <div class="bar"><i style="width:81.62%"></i></div>
+        <p>151 / 185，通过失败 34 条。主要问题：互动类过宽。</p>
+      </div>
+      <div class="step">
+        <h2>candidate_002</h2>
+        <div class="rate">92.97%</div>
+        <div class="bar"><i style="width:92.97%"></i></div>
+        <p>172 / 185，通过失败 13 条。主要问题：边界歧义。</p>
+      </div>
+      <div class="step">
+        <h2>candidate_003</h2>
+        <div class="rate">97.84%</div>
+        <div class="bar"><i style="width:97.84%"></i></div>
+        <p>181 / 185，超过 95% 终止条件，选为最终版本。</p>
+      </div>
+    </section>
+
+    <section class="content">
+      <div class="box">
+        <h3>剩余失败样本</h3>
+        <table>
+          <thead>
+            <tr><th>Case</th><th>Expected</th><th>Actual</th><th>审核备注</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>row_003</td><td>正文内容总结</td><td>知识投教</td><td>“啥意思看不懂”在内容解释和总结间仍有歧义。</td></tr>
+            <tr><td>row_028</td><td>业务规则 / 知识投教</td><td>私密持仓与收益</td><td>无主体“成本价”被错误补成京小贝持仓。</td></tr>
+            <tr><td>row_069</td><td>高危合规风险</td><td>客诉问题</td><td>“违法”核验优先级还需压过客诉。</td></tr>
+            <tr><td>row_122</td><td>APP功能操作</td><td>行情走势</td><td>“怎么看当天走势”仍被理解成问观点。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <aside class="box">
+        <h3>本页覆盖的审核信息</h3>
+        <div class="links">
+          <div class="linkrow"><b>最终产物</b><span class="pill">best_prompt.md</span><span class="pill">summary.json</span></div>
+          <div class="linkrow"><b>优化路径</b><span class="pill">optimization_log.jsonl</span><span class="pill">judgement_*.json</span></div>
+          <div class="linkrow"><b>失败复核</b><span class="pill">failure_cases_*.json</span><span class="pill">subagent_reviews_*.json</span></div>
+        </div>
+        <div class="print-note">静报方案的核心价值是低成本，把“看 JSON”变成“看报告”。适合先接入 finalize 后附带生成。</div>
+      </aside>
+    </section>
+  </article>
+</body>
+</html>

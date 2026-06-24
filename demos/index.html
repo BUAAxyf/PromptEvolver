@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PromptEvolver Demos</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1d2329;
+      --muted: #5d6975;
+      --line: #d7dde3;
+      --panel: #ffffff;
+      --page: #f5f7f9;
+      --accent: #246b59;
+      --accent-2: #b4512a;
+      --shadow: 0 12px 28px rgba(34, 42, 51, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--page);
+    }
+
+    main {
+      width: min(1080px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 48px 0;
+    }
+
+    header {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.05;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 15px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      min-height: 180px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 22px;
+      padding: 22px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 19px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: #edf3f1;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .tag.warning {
+      background: #f7eee9;
+      color: var(--accent-2);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 8px 13px;
+      border-radius: 7px;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .button.secondary {
+      background: #fff;
+      color: var(--accent);
+    }
+
+    .note {
+      margin-top: 20px;
+      padding: 16px 18px;
+      border-left: 4px solid var(--accent);
+      background: #fff;
+      color: var(--muted);
+      border-radius: 0 8px 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>PromptEvolver Demos</h1>
+      <p>集中入口，用于人工审阅提示词优化过程的可视化 demo 和后续备选方案。</p>
+    </header>
+
+    <section class="grid" aria-label="Demo 列表">
+      <article class="card">
+        <div>
+          <h2>提示词优化路径可视化</h2>
+          <p>包含静态报告、交互审阅看板和审计工作台三个候选呈现方案。</p>
+          <div class="meta">
+            <span class="tag">当前方案集</span>
+            <span class="tag warning">从 trace_1782221613 汇总</span>
+          </div>
+        </div>
+        <div class="actions">
+          <a class="button" href="./prompt-optimization-visualization/index.html">打开入口</a>
+          <a class="button secondary" href="./prompt-optimization-visualization/review-dashboard.html">推荐方案</a>
+        </div>
+      </article>
+    </section>
+
+    <p class="note">后续备选方案请继续放在此目录下，每个方案一个独立子目录，并提供自己的 index.html。</p>
+  </main>
+</body>
+</html>

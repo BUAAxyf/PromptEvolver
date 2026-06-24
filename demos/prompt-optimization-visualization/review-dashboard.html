@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>审阅 Demo - 交互审核面板</title>
+  <style>
+    :root {
+      --bg: #171713;
+      --panel: #eeeadf;
+      --ink: #181814;
+      --muted: #706b5c;
+      --line: #383528;
+      --teal: #0c8b7b;
+      --red: #d25a3f;
+      --yellow: #dbb54a;
+      --cream: #fff9e8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(135deg, transparent 0 48%, rgba(255,255,255,.05) 48% 52%, transparent 52%),
+        var(--bg);
+      color: var(--ink);
+      font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    }
+    .app {
+      width: min(1240px, calc(100% - 30px));
+      margin: 28px auto;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 16px;
+    }
+    .topbar {
+      color: var(--cream);
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 8px 2px 18px;
+      border-bottom: 1px solid rgba(255,255,255,.2);
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 5vw, 58px);
+      line-height: .95;
+      letter-spacing: 0;
+    }
+    .status {
+      min-width: 230px;
+      padding: 12px 14px;
+      border: 1px solid rgba(255,255,255,.35);
+      background: rgba(255,255,255,.08);
+      color: var(--cream);
+    }
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    button {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.active {
+      background: var(--yellow);
+      box-shadow: 4px 4px 0 #000;
+      transform: translate(-2px, -2px);
+    }
+    .board {
+      background: var(--panel);
+      border: 2px solid #0b0b08;
+      min-height: 640px;
+      display: grid;
+      grid-template-columns: 290px 1fr 360px;
+    }
+    .rail {
+      border-right: 2px solid var(--line);
+      padding: 18px;
+      background: #dcd4c0;
+    }
+    .main {
+      padding: 20px;
+      min-width: 0;
+    }
+    .drawer {
+      border-left: 2px solid var(--line);
+      background: var(--cream);
+      padding: 18px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      background: #f7f1df;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .metric b {
+      display: block;
+      font-size: 30px;
+      line-height: 1;
+    }
+    .mini {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 5px;
+    }
+    .migration {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .mig-row {
+      display: grid;
+      grid-template-columns: 110px 1fr 48px;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .track {
+      height: 13px;
+      background: #cfc4aa;
+      border: 1px solid var(--line);
+      position: relative;
+    }
+    .track i {
+      display: block;
+      height: 100%;
+      background: var(--teal);
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .candidate {
+      border: 1px solid var(--line);
+      background: #fffaf0;
+      padding: 14px;
+    }
+    .candidate .big {
+      font-size: 32px;
+      font-weight: 800;
+    }
+    .case-list {
+      display: grid;
+      gap: 8px;
+    }
+    .case {
+      width: 100%;
+      text-align: left;
+      border: 1px solid var(--line);
+      background: #fffaf0;
+      display: grid;
+      grid-template-columns: 82px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 12px;
+      font-weight: 500;
+    }
+    .case:hover { background: #f4e1bd; }
+    .badge {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      padding: 3px 7px;
+      background: #f1d47c;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .drawer h2 { margin: 0 0 10px; font-size: 28px; }
+    .kv {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid #d0c6ac;
+      font-size: 14px;
+    }
+    .quote {
+      margin-top: 14px;
+      padding: 12px;
+      background: #efe5c8;
+      border-left: 6px solid var(--red);
+      line-height: 1.5;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    @media (max-width: 1060px) {
+      .board { grid-template-columns: 1fr; }
+      .rail, .drawer { border: 0; }
+      .cards { grid-template-columns: 1fr; }
+      .topbar { display: block; }
+      .status { margin-top: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <h1>审阅：交互式优化审核面板</h1>
+        <p>用于人工逐条校验 candidate、失败样本、judge 建议和最终选择。</p>
+      </div>
+      <div class="status"><b>推荐方案</b><br />静态 HTML + report-data.json，平衡落地速度和审核效率。</div>
+    </header>
+
+    <nav class="tabs" aria-label="dashboard tabs">
+      <button class="active" data-tab="overview">Overview</button>
+      <button data-tab="failures">Failures</button>
+      <button data-tab="diff">Prompt Diff</button>
+      <button data-tab="artifacts">Artifacts</button>
+    </nav>
+
+    <section class="board">
+      <aside class="rail">
+        <div class="metric"><b>97.84%</b><div class="mini">最终通过率</div></div>
+        <div class="metric"><b>34 → 13 → 4</b><div class="mini">失败样本迁移</div></div>
+        <div class="metric"><b>3</b><div class="mini">候选轮次</div></div>
+        <div class="migration">
+          <div class="mig-row"><span>wrong_label</span><span class="track"><i style="width: 12%"></i></span><b>4</b></div>
+          <div class="mig-row"><span>interaction</span><span class="track"><i style="width: 0%"></i></span><b>0</b></div>
+          <div class="mig-row"><span>boundary</span><span class="track"><i style="width: 20%"></i></span><b>4</b></div>
+        </div>
+      </aside>
+
+      <section class="main">
+        <div id="overview" class="tab-panel active">
+          <div class="cards">
+            <article class="candidate"><b>candidate_001</b><div class="big">81.62%</div><p>Baseline。互动类过宽，高危/私密/APP 边界弱。</p></article>
+            <article class="candidate"><b>candidate_002</b><div class="big">92.97%</div><p>加入 L3 优先级，失败降至 13 条。</p></article>
+            <article class="candidate"><b>candidate_003</b><div class="big">97.84%</div><p>补强点位、入口、客诉、N/A 边界，达标。</p></article>
+          </div>
+          <div class="quote">这个方案的重点是让 reviewer 不打开 JSON，也能看出每轮为什么改、改完解决了什么、还剩什么风险。</div>
+        </div>
+
+        <div id="failures" class="tab-panel">
+          <div class="case-list" id="caseList"></div>
+        </div>
+
+        <div id="diff" class="tab-panel">
+          <div class="quote"><b>candidate_001 → candidate_002</b><br />新增 L3 优先级与互动边界：高危合规、私密持仓、APP/客诉、行情/买卖先于情绪互动。</div>
+          <div class="quote"><b>candidate_002 → candidate_003</b><br />强化“总结点位=行情”、“在哪/怎么看=APP操作”、“买不了=客诉”、“域外推荐=兜底”。</div>
+        </div>
+
+        <div id="artifacts" class="tab-panel">
+          <div class="case-list">
+            <button class="case"><span>final</span><span>final/best_prompt.md</span><span class="badge">prompt</span></button>
+            <button class="case"><span>log</span><span>optimization_log.jsonl</span><span class="badge">trace</span></button>
+            <button class="case"><span>judge</span><span>judgement_candidate_003.json</span><span class="badge">scores</span></button>
+            <button class="case"><span>fails</span><span>failure_cases_candidate_003.json</span><span class="badge">review</span></button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="drawer" id="drawer">
+        <h2>row_003</h2>
+        <div class="kv"><b>Expected</b><span>正文内容总结</span></div>
+        <div class="kv"><b>Actual</b><span>知识投教</span></div>
+        <div class="kv"><b>Comment</b><span>@京小贝 啥意思我咋看不懂</span></div>
+        <div class="quote">点击 Failures 中的 case，可在这里查看 expected、actual、comment 和审核建议。</div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const cases = [
+      { id: "row_003", expected: "正文内容总结", actual: "知识投教", text: "@京小贝 啥意思我咋看不懂", note: "内容解释与总结边界仍有歧义。" },
+      { id: "row_028", expected: "业务规则 / 知识投教", actual: "私密持仓与收益", text: "@京小贝 成本价多少啊？", note: "无主体成本价被补成 AI 持仓。" },
+      { id: "row_069", expected: "高危合规风险", actual: "客诉问题", text: "@京小贝 这个是真的吗，违法？", note: "违法核验优先级应更高。" },
+      { id: "row_122", expected: "APP功能操作", actual: "行情走势", text: "@京小贝 怎么看当天的走势", note: "查看入口与行情观点仍需区分。" }
+    ];
+
+    document.querySelectorAll("[data-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-tab]").forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(btn.dataset.tab).classList.add("active");
+      });
+    });
+
+    const list = document.getElementById("caseList");
+    const drawer = document.getElementById("drawer");
+    cases.forEach((item) => {
+      const row = document.createElement("button");
+      row.className = "case";
+      row.innerHTML = `<span>${item.id}</span><span>${item.text}</span><span class="badge">${item.actual}</span>`;
+      row.addEventListener("click", () => {
+        drawer.innerHTML = `
+          <h2>${item.id}</h2>
+          <div class="kv"><b>Expected</b><span>${item.expected}</span></div>
+          <div class="kv"><b>Actual</b><span>${item.actual}</span></div>
+          <div class="kv"><b>Comment</b><span>${item.text}</span></div>
+          <div class="quote">${item.note}</div>
+        `;
+      });
+      list.appendChild(row);
+    });
+  </script>
+</body>
+</html>

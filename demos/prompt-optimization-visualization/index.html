@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prompt Optimizer 可视化方案 Demo</title>
+  <style>
+    :root {
+      --ink: #181814;
+      --paper: #f7f4ed;
+      --line: #2b2a2440;
+      --accent: #0e7c7b;
+      --warn: #b9472d;
+      --gold: #c99a2e;
+      --panel: #fffdf7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(24,24,20,.035) 1px, transparent 1px) 0 0 / 24px 24px,
+        linear-gradient(rgba(24,24,20,.035) 1px, transparent 1px) 0 0 / 24px 24px,
+        var(--paper);
+      font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    }
+    .shell {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 44px 0 56px;
+    }
+    .mast {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 28px;
+      align-items: end;
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 28px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(38px, 6vw, 82px);
+      line-height: .92;
+      letter-spacing: 0;
+      max-width: 760px;
+    }
+    .stamp {
+      border: 2px solid var(--ink);
+      background: var(--panel);
+      padding: 18px;
+      box-shadow: 8px 8px 0 var(--ink);
+    }
+    .stamp strong {
+      display: block;
+      font-size: 32px;
+      line-height: 1;
+    }
+    .stamp span {
+      display: block;
+      margin-top: 8px;
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 34px;
+    }
+    .card {
+      min-height: 390px;
+      background: var(--panel);
+      border: 2px solid var(--ink);
+      padding: 22px;
+      color: inherit;
+      text-decoration: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: transform .18s ease, box-shadow .18s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .card:hover {
+      transform: translate(-4px, -4px);
+      box-shadow: 10px 10px 0 var(--ink);
+    }
+    .card::before {
+      content: attr(data-index);
+      position: absolute;
+      right: 18px;
+      top: 12px;
+      font-size: 70px;
+      line-height: 1;
+      opacity: .08;
+      font-weight: 800;
+    }
+    .tag {
+      display: inline-flex;
+      width: max-content;
+      border: 1px solid var(--ink);
+      padding: 5px 10px;
+      font-size: 13px;
+      background: #f1e6cf;
+    }
+    .card h2 {
+      margin: 18px 0 12px;
+      font-size: 34px;
+      line-height: 1.02;
+    }
+    .card p {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.55;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+      margin-top: 22px;
+    }
+    .metric {
+      border-top: 2px solid var(--ink);
+      padding-top: 8px;
+      font-size: 13px;
+    }
+    .metric b {
+      display: block;
+      font-size: 19px;
+      margin-bottom: 2px;
+    }
+    .arrow {
+      margin-top: 22px;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .arrow::after {
+      content: "";
+      height: 2px;
+      flex: 1;
+      background: var(--ink);
+      box-shadow: 12px 0 0 var(--ink);
+    }
+    .note {
+      margin-top: 28px;
+      padding: 16px 18px;
+      border-left: 8px solid var(--accent);
+      background: rgba(255,255,255,.55);
+      font-size: 15px;
+      line-height: 1.55;
+    }
+    @media (max-width: 860px) {
+      .mast, .grid { grid-template-columns: 1fr; }
+      .card { min-height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="mast">
+      <div>
+        <h1>Prompt Optimizer 审核可视化 Demo</h1>
+      </div>
+      <aside class="stamp">
+        <strong>181 / 185</strong>
+        <span>最终 candidate_003 通过率 97.84%。以下三个 demo 对应敏捷、适中、稳健三档落地方案。</span>
+      </aside>
+    </section>
+
+    <section class="grid" aria-label="demo list">
+      <a class="card" href="static-report.html" data-index="01">
+        <div>
+          <span class="tag">敏捷 / 静报</span>
+          <h2>单页静态报告</h2>
+          <p>把 JSON trace 汇总成一张可打印的审核页：时间线、指标卡、失败 case 表、产物链接。</p>
+          <div class="metrics">
+            <div class="metric"><b>0依赖</b>HTML</div>
+            <div class="metric"><b>低成本</b>最快落地</div>
+            <div class="metric"><b>轻交互</b>适合归档</div>
+          </div>
+        </div>
+        <div class="arrow">Open demo</div>
+      </a>
+
+      <a class="card" href="review-dashboard.html" data-index="02">
+        <div>
+          <span class="tag">适中 / 审阅</span>
+          <h2>交互审核面板</h2>
+          <p>提供 tabs、筛选、失败迁移和 case 抽屉，适合人工逐条审核和比较候选轮次。</p>
+          <div class="metrics">
+            <div class="metric"><b>静态包</b>HTML + JSON</div>
+            <div class="metric"><b>强审核</b>筛选展开</div>
+            <div class="metric"><b>推荐</b>性价比高</div>
+          </div>
+        </div>
+        <div class="arrow">Open demo</div>
+      </a>
+
+      <a class="card" href="audit-workbench.html" data-index="03">
+        <div>
+          <span class="tag">稳健 / 审台</span>
+          <h2>审计工作台</h2>
+          <p>以 candidate DAG、prompt diff、证据面板组织全过程，适合长期沉淀和跨任务复盘。</p>
+          <div class="metrics">
+            <div class="metric"><b>Manifest</b>稳定契约</div>
+            <div class="metric"><b>深追踪</b>证据闭环</div>
+            <div class="metric"><b>高成本</b>长期收益</div>
+          </div>
+        </div>
+        <div class="arrow">Open demo</div>
+      </a>
+    </section>
+
+    <p class="note">这些 demo 是前端形态验证稿，不改 CLI 数据结构。若选定方案，下一步再把对应页面接入 `codex-prompt-opt report` 或 finalize 流程。</p>
+  </main>
+</body>
+</html>

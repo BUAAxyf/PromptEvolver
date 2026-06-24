@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>审台 Demo - 审计工作台</title>
+  <style>
+    :root {
+      --bg: #0d1110;
+      --panel: #111a17;
+      --panel2: #17231f;
+      --ink: #eff5e8;
+      --muted: #9da99d;
+      --line: #385047;
+      --green: #58c08c;
+      --amber: #e0b34b;
+      --red: #e36a50;
+      --cyan: #67c6d4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 15% 10%, rgba(103,198,212,.14), transparent 30%),
+        radial-gradient(circle at 90% 20%, rgba(224,179,75,.1), transparent 28%),
+        var(--bg);
+      color: var(--ink);
+      font-family: "DIN Condensed", "Avenir Next Condensed", "PingFang SC", sans-serif;
+    }
+    .workbench {
+      height: 100vh;
+      min-height: 760px;
+      display: grid;
+      grid-template-rows: 72px 1fr;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(13,17,16,.8);
+      backdrop-filter: blur(12px);
+    }
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: 0;
+    }
+    .run-id {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 270px minmax(380px, 1fr) 380px;
+      min-height: 0;
+    }
+    aside, section {
+      min-height: 0;
+      overflow: auto;
+    }
+    .dag {
+      border-right: 1px solid var(--line);
+      padding: 22px;
+      background: rgba(17,26,23,.92);
+    }
+    .node {
+      position: relative;
+      border: 1px solid var(--line);
+      background: var(--panel2);
+      padding: 14px;
+      margin-bottom: 30px;
+    }
+    .node::after {
+      content: "";
+      position: absolute;
+      left: 28px;
+      bottom: -31px;
+      width: 1px;
+      height: 30px;
+      background: var(--line);
+    }
+    .node:last-child::after { display: none; }
+    .node.active {
+      border-color: var(--green);
+      box-shadow: 0 0 0 1px var(--green), 0 0 30px rgba(88,192,140,.12);
+    }
+    .node b { display: block; font-size: 20px; }
+    .node span { color: var(--muted); font-size: 13px; }
+    .node .score {
+      margin-top: 12px;
+      font-size: 34px;
+      color: var(--green);
+      line-height: 1;
+    }
+    .center {
+      padding: 22px;
+      background: linear-gradient(180deg, rgba(255,255,255,.03), transparent);
+    }
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .tile {
+      border: 1px solid var(--line);
+      background: rgba(17,26,23,.9);
+      padding: 16px;
+    }
+    .tile h2 {
+      margin: 0 0 10px;
+      font-size: 22px;
+    }
+    .diff {
+      font-family: "Menlo", "Consolas", monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      background: #07100d;
+      border: 1px solid var(--line);
+      padding: 16px;
+      min-height: 420px;
+    }
+    .plus { color: var(--green); }
+    .minus { color: var(--red); }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .mini {
+      border: 1px solid var(--line);
+      padding: 12px;
+      background: rgba(23,35,31,.95);
+    }
+    .mini b {
+      display: block;
+      font-size: 22px;
+      margin-bottom: 4px;
+    }
+    .evidence {
+      border-left: 1px solid var(--line);
+      padding: 22px;
+      background: rgba(7,16,13,.72);
+    }
+    .evidence h2 {
+      margin: 0 0 16px;
+      font-size: 26px;
+    }
+    .case {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 13px;
+      margin-bottom: 10px;
+    }
+    .case b { color: var(--amber); }
+    .case p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      line-height: 1.4;
+      font-size: 14px;
+    }
+    .tag {
+      display: inline-block;
+      padding: 3px 7px;
+      border: 1px solid var(--line);
+      margin: 3px 3px 0 0;
+      color: var(--cyan);
+      font-size: 12px;
+    }
+    @media (max-width: 1100px) {
+      .workbench { height: auto; }
+      .grid, .split, .meta { grid-template-columns: 1fr; }
+      .dag, .evidence { border: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="workbench">
+    <header>
+      <h1>审台：Prompt Optimization Audit Workbench</h1>
+      <div class="run-id">trace_1782221613 / manifest-driven concept</div>
+    </header>
+
+    <div class="grid">
+      <aside class="dag" aria-label="candidate graph">
+        <div class="node">
+          <b>candidate_001</b>
+          <span>Baseline prompt</span>
+          <div class="score">81.62%</div>
+        </div>
+        <div class="node">
+          <b>candidate_002</b>
+          <span>L3 priority + interaction boundary</span>
+          <div class="score">92.97%</div>
+        </div>
+        <div class="node active">
+          <b>candidate_003</b>
+          <span>Ambiguity hardening</span>
+          <div class="score">97.84%</div>
+        </div>
+      </aside>
+
+      <section class="center">
+        <div class="meta">
+          <div class="mini"><b>185</b>cases</div>
+          <div class="mini"><b>181</b>passed</div>
+          <div class="mini"><b>4</b>open</div>
+          <div class="mini"><b>3</b>iterations</div>
+        </div>
+
+        <div class="split">
+          <article class="tile">
+            <h2>Manifest 价值</h2>
+            <p>把每轮候选、prompt hash、指标、失败样本、judge 建议和文件路径统一成稳定审计契约。</p>
+          </article>
+          <article class="tile">
+            <h2>适合场景</h2>
+            <p>长期复盘、多任务对比、团队审核、自动化回归和上线前提示词审计。</p>
+          </article>
+        </div>
+
+        <div class="diff" aria-label="prompt diff preview"><span class="minus">- 情绪价值与互动是宽泛兜底</span>
+<span class="plus">+ 先判高危、私密、APP/客诉、行情、规则、N/A，再考虑互动</span>
+<span class="plus">+ 金融点位、价格、走势，即使用“总结”也优先行情走势</span>
+<span class="plus">+ 在哪/如何查看/怎么领/怎么看数据，优先 APP 功能操作</span>
+<span class="plus">+ 买不了/买不进去/支付失败，优先客诉问题</span>
+<span class="plus">+ 域外品牌、美食、商品推荐，优先其他/未知兜底</span>
+<span class="plus">+ 直接面向京小贝的攻击质疑归互动；第三方冲突归 N/A</span></div>
+      </section>
+
+      <aside class="evidence">
+        <h2>Evidence Panel</h2>
+        <div class="case">
+          <b>summary.json</b>
+          <p>selected_candidate_id = candidate_003; pass_rate = 0.978378。</p>
+          <span class="tag">final</span><span class="tag">metrics</span>
+        </div>
+        <div class="case">
+          <b>optimization_log.jsonl</b>
+          <p>记录 candidate_001 → candidate_002 → candidate_003 的策略、指标和产物路径。</p>
+          <span class="tag">trace</span><span class="tag">strategy</span>
+        </div>
+        <div class="case">
+          <b>failure_cases_candidate_003.json</b>
+          <p>保留 4 个剩余失败，适合作为下一轮专项回归集。</p>
+          <span class="tag">review</span><span class="tag">open cases</span>
+        </div>
+        <div class="case">
+          <b>prompt hash</b>
+          <p>b6a37969e4c604e2090479970a5f015ac57846c9040b5941c14154877aecb1e6</p>
+          <span class="tag">audit</span><span class="tag">immutability</span>
+        </div>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>
