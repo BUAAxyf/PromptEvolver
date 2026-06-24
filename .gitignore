@@ -16,4 +16,6 @@ venv/
 .idea/
 .prompt-evolver/
 /output/
+examples/prompt.md
+examples/task.json
 .DS_Store

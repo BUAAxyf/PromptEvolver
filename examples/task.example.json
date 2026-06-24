@@ -1,0 +1,39 @@
+{
+  "task": {
+    "name": "Support request classifier",
+    "description": "Minimal multi-case variables file for Prompt Evolver examples.",
+    "rubric": "The target model must return valid JSON. The label should match expected.label."
+  },
+  "cases": [
+    {
+      "id": "refund_001",
+      "variables": {
+        "request": "I was charged twice this month. Can you refund the duplicate payment?"
+      },
+      "expected": {
+        "label": "billing"
+      },
+      "rubric": "Classify duplicate charges and refunds as billing."
+    },
+    {
+      "id": "login_001",
+      "variables": {
+        "request": "The app keeps showing an error after I enter the verification code."
+      },
+      "expected": {
+        "label": "technical"
+      },
+      "rubric": "Classify product errors and broken login flows as technical."
+    },
+    {
+      "id": "password_001",
+      "variables": {
+        "request": "I need to reset my password but no longer have access to my old phone number."
+      },
+      "expected": {
+        "label": "account"
+      },
+      "rubric": "Classify password and account access issues as account."
+    }
+  ]
+}

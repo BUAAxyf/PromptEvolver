@@ -118,16 +118,16 @@ The variables file is one JSON file with multiple cases:
 
 ## CLI Workflow
 
-Validate inputs:
+Validate the checked-in sample inputs:
 
 ```bash
-prompt-evolver validate examples/prompt.md examples/task.json
+prompt-evolver validate examples/prompt.example.md examples/task.example.json
 ```
 
 Render task instances:
 
 ```bash
-prompt-evolver render examples/prompt.md examples/task.json --out .prompt-evolver/rendered_cases.jsonl
+prompt-evolver render examples/prompt.example.md examples/task.example.json --out .prompt-evolver/rendered_cases.jsonl
 ```
 
 Run the target model:
@@ -139,7 +139,7 @@ prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/ta
 Package materials for Codex Judge:
 
 ```bash
-prompt-evolver judge-pack .prompt-evolver/rendered_cases.jsonl .prompt-evolver/target_outputs.jsonl examples/task.json --out .prompt-evolver/judge_pack.json
+prompt-evolver judge-pack .prompt-evolver/rendered_cases.jsonl .prompt-evolver/target_outputs.jsonl examples/task.example.json --out .prompt-evolver/judge_pack.json
 ```
 
 After Codex writes `judgement.json`, ingest it:
@@ -151,8 +151,10 @@ prompt-evolver ingest-judgement .prompt-evolver/judgement.json --out-dir .prompt
 Run one automated target-model step and produce a judge pack:
 
 ```bash
-prompt-evolver optimize-step examples/prompt.md examples/task.json --out-dir .prompt-evolver --candidate-id initial --model "$DSPY_MODEL"
+prompt-evolver optimize-step examples/prompt.example.md examples/task.example.json --out-dir .prompt-evolver --candidate-id initial --model "$DSPY_MODEL"
 ```
+
+The checked-in sample files are `examples/prompt.example.md` and `examples/task.example.json`. Local working inputs named `examples/prompt.md` and `examples/task.json` are ignored so real prompts and evaluation data can stay private.
 
 The CLI does not generate the next prompt. The Codex master agent aggregates subagent suggestions, edits the prompt template directly, records the iteration in `.prompt-evolver/optimization_log.jsonl`, and then runs `optimize-step` again with the new prompt.
 
@@ -171,7 +173,8 @@ The Codex Skill lives in `skills/prompt-evolver`. Use it when Codex should orche
 ```text
 src/prompt_evolver/        CLI implementation
 tests/                     Unit tests
-examples/                  Minimal prompt and JSON case examples
+examples/prompt.example.md Minimal checked-in prompt example
+examples/task.example.json Minimal checked-in JSON variables example
 examples/prompt_jxb_v*.md  JXB prompt iteration history
 skills/prompt-evolver/     Codex Skill for this workflow
 PLAN.md                    Original design plan
