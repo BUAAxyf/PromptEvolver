@@ -31,6 +31,8 @@ class CliContractTests(unittest.TestCase):
         reference_text = reference.read_text(encoding="utf-8")
 
         self.assertIn("references/input-json-format.md", skill_text)
+        self.assertIn("scripts/validate_input_json.py", skill_text)
+        self.assertIn("scripts/validate_input_json.py", reference_text)
         for required_text in (
             "| `task` | object | No |",
             "| `globals` | object | No |",

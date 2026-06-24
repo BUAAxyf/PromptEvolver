@@ -35,6 +35,16 @@ They all refer to the full task produced by rendering the prompt template with o
 - Before validating or explaining the variables JSON file, read `references/input-json-format.md` for the accepted JSON shapes, field meanings, and requiredness.
 - Before dispatching judge subagents, read `references/judge-subagent-prompt.md` completely. The master agent must paste and substitute that reference prompt into each subagent task. Do not ask the subagent to open files, links, or paths.
 
+## Input JSON Validation Script
+
+Before running target-model evaluation, validate the variables JSON with the bundled deterministic script:
+
+```bash
+python skills/codex-prompt-optimizer/scripts/validate_input_json.py <task.json> --prompt <prompt.md>
+```
+
+The script checks the root shape, case-list field, field types, unique case IDs, `globals` merging, inferred variables, and optional Mustache variable coverage. It prints a JSON report and exits non-zero when the input does not match `references/input-json-format.md`.
+
 ## Workflow
 
 1. Read the prompt template and variables JSON to understand task intent, expected outputs, and rubric.

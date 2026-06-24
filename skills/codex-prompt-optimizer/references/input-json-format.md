@@ -99,6 +99,12 @@ Case validation and normalization rules:
 
 The prompt template uses Mustache placeholders such as `{{request}}` or `{{user.name}}`. For every case, all variables required by the template must exist in that case's effective render variables after `globals` are merged.
 
+Run deterministic format validation first:
+
+```bash
+python skills/codex-prompt-optimizer/scripts/validate_input_json.py <task.json> --prompt <prompt.md>
+```
+
 Run validation before model calls:
 
 ```bash
