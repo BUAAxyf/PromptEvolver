@@ -2,19 +2,19 @@
 
 英文文档：[README.md](README.md)
 
-Prompt Evolver 是一个本地提示词优化工具链，用于 Codex 主导的工作流。CLI 负责执行可重复的自动化流程：校验 Mustache prompt 模板，将 JSON 中的多个 case 渲染成任务实例，通过 DSPy 调用目标模型，把目标模型输出打包给 Codex Judge 审阅，读取结构化评分结果，并写出 Codex 选定 prompt 的最终产物。
+Prompt Evolver 是一个本地提示词优化工具链，用于基于文件交接的 prompt 评估工作流。CLI 负责执行可重复的自动化流程：校验 Mustache prompt 模板，将 JSON 中的多个 case 渲染成任务实例，通过 DSPy 调用目标模型，把目标模型输出打包给结构化评审流程，读取结构化评分结果，并写出选定 prompt 的最终产物。
 
-Codex 不作为目标模型执行器。Codex 负责阅读目标模型输出，派发 Judge 子代理进行多维评分和 bad case 分析，写入结构化评分与失败诊断，以 master agent 身份重写 prompt 模板，并调用 CLI 进入下一轮评估。
+CLI 负责确定性的文件处理和目标模型执行步骤。Prompt 重写和评审在 CLI 外完成：读取生成的 judge pack，并按约定写入 JSON 结果。
 
 ## 核心能力
 
 - 使用单个 JSON 文件中的多个评估 case 渲染 Mustache prompt 模板。
 - 将每个渲染后的 prompt 视为一个任务实例，也可以称为 rendered prompt、prompt instantiation 或 evaluation case/example。
 - 在 `run` 和 `optimize-step` 中通过 DSPy 调用目标模型。
-- 通过 JSON 文件交换 Codex Judge 结果，CLI 不直接调用 Codex。
-- prompt 生成不放在 CLI 中；Codex master agent 根据子代理建议重写 prompt 模板。
+- 通过 JSON 文件交换结构化评审结果，评审流程不耦合进 CLI。
+- prompt 生成不放在 CLI 中；根据评审结论在两轮评估之间编辑 prompt 模板。
 - 只优化 prompt template；CLI 不会重写变量文件，也不会把 bad case 追加到 prompt 中。
-- 支持 master agent 按阈值和预算停止：目标通过率、目标平均 `score_100`、最大迭代预算。
+- 支持按阈值和预算停止：目标通过率、目标平均 `score_100`、最大迭代预算。
 
 ## 环境要求
 
@@ -138,13 +138,13 @@ prompt-evolver render examples/prompt.example.md examples/task.example.json --ou
 prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/target_outputs.jsonl --model "$DSPY_MODEL"
 ```
 
-打包 Codex Judge 材料：
+打包结构化评审材料：
 
 ```bash
 prompt-evolver judge-pack .prompt-evolver/rendered_cases.jsonl .prompt-evolver/target_outputs.jsonl examples/task.example.json --out .prompt-evolver/judge_pack.json
 ```
 
-Codex 写入 `judgement.json` 后，读取评分结果：
+写入 `judgement.json` 后，读取评分结果：
 
 ```bash
 prompt-evolver ingest-judgement .prompt-evolver/judgement.json --out-dir .prompt-evolver
@@ -158,17 +158,25 @@ prompt-evolver optimize-step examples/prompt.example.md examples/task.example.js
 
 仓库内置样例文件是 `examples/prompt.example.md` 和 `examples/task.example.json`。本地工作输入 `examples/prompt.md` 和 `examples/task.json` 已被忽略，真实 prompt 和评估数据可以保留在本机。
 
-CLI 不生成下一版 prompt。Codex master agent 聚合子代理建议，直接编辑 prompt 模板，在 `.prompt-evolver/optimization_log.jsonl` 中记录迭代，然后用新版 prompt 再次运行 `optimize-step`。
+CLI 不生成下一版 prompt。根据评审结论编辑 prompt 模板，在 `.prompt-evolver/optimization_log.jsonl` 中记录迭代，然后用新版 prompt 再次运行 `optimize-step`。
 
-写出 Codex 选定的最终 prompt：
+写出选定的最终 prompt：
 
 ```bash
 prompt-evolver finalize .prompt-evolver/prompts/best.md .prompt-evolver/judgement_best.json --out-dir .prompt-evolver/final
 ```
 
-## Codex Skill
+## Skill 用法
 
-Codex Skill 位于 `skills/prompt-evolver`。当 Codex 需要编排该工作流、派发并行 Judge 子代理、聚合目标模型输出评分、写入 CLI 消费的结构化 `judgement.json`、以 master agent 身份重写 prompt、维护迭代日志时，应使用该 Skill。
+Skill 位于 `skills/prompt-evolver`。它围绕 CLI 提供可重复工作流：输入校验、单轮目标模型评估、judge pack 评审、prompt 迭代和最终产物写出。
+
+可以直接使用这些简短提示词：
+
+- 输入校验：`使用 $prompt-evolver 校验 examples/prompt.example.md 和 examples/task.example.json，模型调用前先确认输入有效。`
+- 单轮评估：`使用 $prompt-evolver 对 examples/prompt.example.md 和 examples/task.example.json 运行一轮 optimize-step，并把 judge pack 保存到 .prompt-evolver。`
+- 输出评审：`使用 $prompt-evolver 审阅 judge pack，逐 case 打分，并按约定 schema 写入 judgement JSON。`
+- 改进 prompt：`使用 $prompt-evolver 总结失败 case，更新 prompt 模板，并把本轮迭代记录到 .prompt-evolver/optimization_log.jsonl。`
+- 最终产物：`使用 $prompt-evolver 将选定 prompt 和 judgement 写出到 .prompt-evolver/final。`
 
 ## 文档维护
 
@@ -182,7 +190,7 @@ tests/                     单元测试
 examples/prompt.example.md 仓库内置 prompt 样例
 examples/task.example.json 仓库内置 JSON 变量样例
 examples/prompt_jxb_v*.md  JXB prompt 迭代历史
-skills/prompt-evolver/     该工作流使用的 Codex Skill
+skills/prompt-evolver/     该工作流使用的 Skill
 README.md                  英文文档
 README_CN.md               中文文档
 PLAN.md                    原始设计方案

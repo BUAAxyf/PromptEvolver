@@ -2,19 +2,19 @@
 
 Chinese documentation: [README_CN.md](README_CN.md)
 
-Prompt Evolver is a local prompt optimization toolkit for a Codex-led workflow. The CLI runs repeatable automation: it validates a Mustache prompt template, renders JSON cases into task instances, calls the target model through DSPy, packages target outputs for Codex Judge review, ingests structured judgements, and writes final artifacts for the prompt selected by Codex.
+Prompt Evolver is a local prompt optimization toolkit for file-based prompt evaluation workflows. The CLI runs repeatable automation: it validates a Mustache prompt template, renders JSON cases into task instances, calls the target model through DSPy, packages target outputs for structured review, ingests structured judgements, and writes final artifacts for the selected prompt.
 
-Codex is not the target model executor. Codex reads the target model outputs, dispatches Judge subagents for multidimensional scoring and bad-case analysis, writes structured scores and failure analysis, rewrites the prompt template as the master agent, and invokes the CLI for the next evaluation step.
+The CLI is responsible for deterministic file and model-execution steps. Prompt rewriting and judgement happen outside the CLI by reading the generated judge pack and writing the expected JSON contracts.
 
 ## Core Capabilities
 
 - Render a Mustache prompt template with a single JSON file containing multiple evaluation cases.
 - Treat each rendered prompt as a task instance, also called a rendered prompt, prompt instantiation, or evaluation case/example.
 - Call the target model with DSPy in `run` and `optimize-step`.
-- Exchange Codex Judge results through JSON files instead of calling Codex from the CLI.
-- Keep prompt generation outside the CLI; the Codex master agent rewrites the prompt template from subagent guidance.
+- Exchange structured judgement results through JSON files instead of coupling review to the CLI.
+- Keep prompt generation outside the CLI; edit the prompt template from review findings between evaluation steps.
 - Optimize only the prompt template; the CLI never rewrites the variables file or appends bad cases to prompts.
-- Support master-agent stopping by threshold and budget: target pass rate, target average `score_100`, and max iteration budget.
+- Support stopping by threshold and budget: target pass rate, target average `score_100`, and max iteration budget.
 
 ## Environment Requirements
 
@@ -138,13 +138,13 @@ Run the target model:
 prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/target_outputs.jsonl --model "$DSPY_MODEL"
 ```
 
-Package materials for Codex Judge:
+Package materials for structured review:
 
 ```bash
 prompt-evolver judge-pack .prompt-evolver/rendered_cases.jsonl .prompt-evolver/target_outputs.jsonl examples/task.example.json --out .prompt-evolver/judge_pack.json
 ```
 
-After Codex writes `judgement.json`, ingest it:
+After `judgement.json` is written, ingest it:
 
 ```bash
 prompt-evolver ingest-judgement .prompt-evolver/judgement.json --out-dir .prompt-evolver
@@ -158,17 +158,25 @@ prompt-evolver optimize-step examples/prompt.example.md examples/task.example.js
 
 The checked-in sample files are `examples/prompt.example.md` and `examples/task.example.json`. Local working inputs named `examples/prompt.md` and `examples/task.json` are ignored so real prompts and evaluation data can stay private.
 
-The CLI does not generate the next prompt. The Codex master agent aggregates subagent suggestions, edits the prompt template directly, records the iteration in `.prompt-evolver/optimization_log.jsonl`, and then runs `optimize-step` again with the new prompt.
+The CLI does not generate the next prompt. Use review findings to edit the prompt template, record the iteration in `.prompt-evolver/optimization_log.jsonl`, and then run `optimize-step` again with the new prompt.
 
-Finalize the prompt selected by Codex:
+Finalize the selected prompt:
 
 ```bash
 prompt-evolver finalize .prompt-evolver/prompts/best.md .prompt-evolver/judgement_best.json --out-dir .prompt-evolver/final
 ```
 
-## Codex Skill
+## Skill Usage
 
-The Codex Skill lives in `skills/prompt-evolver`. Use it when Codex should orchestrate this workflow, dispatch parallel Judge subagents, aggregate target-model output scores, write the structured `judgement.json` consumed by the CLI, rewrite the prompt as master agent, and maintain iteration logs.
+The Skill lives in `skills/prompt-evolver`. It provides a repeatable workflow around the CLI: input validation, one-step target-model evaluation, judge-pack review, prompt iteration, and finalization.
+
+Use these short prompts as starting points:
+
+- Input validation: `Use $prompt-evolver to validate examples/prompt.example.md and examples/task.example.json before any model call.`
+- One evaluation step: `Use $prompt-evolver to run one optimize-step for examples/prompt.example.md and examples/task.example.json, then save the judge pack under .prompt-evolver.`
+- Review outputs: `Use $prompt-evolver to review the judge pack, score each case, and write judgement JSON in the expected schema.`
+- Improve the prompt: `Use $prompt-evolver to summarize failing cases, update the prompt template, and record the iteration in .prompt-evolver/optimization_log.jsonl.`
+- Finalize: `Use $prompt-evolver to finalize the selected prompt and judgement into .prompt-evolver/final.`
 
 ## Documentation Maintenance
 
@@ -182,7 +190,7 @@ tests/                     Unit tests
 examples/prompt.example.md Minimal checked-in prompt example
 examples/task.example.json Minimal checked-in JSON variables example
 examples/prompt_jxb_v*.md  JXB prompt iteration history
-skills/prompt-evolver/     Codex Skill for this workflow
+skills/prompt-evolver/     Skill for this workflow
 README.md                  English documentation
 README_CN.md               Chinese documentation
 PLAN.md                    Original design plan
