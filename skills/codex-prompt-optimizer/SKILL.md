@@ -45,6 +45,24 @@ python skills/codex-prompt-optimizer/scripts/validate_input_json.py <task.json> 
 
 The script checks the root shape, case-list field, field types, unique case IDs, `globals` merging, inferred variables, and optional Mustache variable coverage. It prints a JSON report and exits non-zero when the input does not match `references/input-json-format.md`.
 
+## Subagent Context Isolation Policy
+
+The master must treat every Judge subagent as context-isolated. Do not rely on inherited parent conversation, prior tool output, local files, or repository paths.
+
+Previous failure mode to avoid: the master spawned subagents with messages such as "use the prompt shown in the parent context" while also instructing them not to read files. The subagents could not see the referenced prompt and correctly returned "missing context" instead of judging. Prevent this by making each spawned message fully self-contained.
+
+Required rules:
+
+- Do not set `fork_context=true` when spawning Judge subagents.
+- Do not ask a subagent to use parent-thread context, earlier messages, local paths, files, links, logs, or previously displayed terminal output.
+- Do not write messages that refer to "the above prompt", "the parent context", "the file at ...", "the judge pack path", or "the prompt I just printed".
+- Paste the fully assembled Judge prompt text directly into each `spawn_agent` message.
+- Substitute every placeholder from `references/judge-subagent-prompt.md` before spawning, including task description, current prompt template, case JSON, and subagent id.
+- Include the exact JSON output contract in the spawned message.
+- Save subagent prompts to disk for audit if useful, but still paste the prompt content into the spawn message; saved files are not a substitute for subagent input.
+- If the assembled message is too large, reduce the case chunk size or compact case fields. Never replace required content with a path or a parent-context reference.
+- If a subagent reports missing context, close it, rebuild a self-contained message, and respawn without inherited context.
+
 ## Workflow
 
 1. Read the prompt template and variables JSON to understand task intent, expected outputs, and rubric.
@@ -92,10 +110,11 @@ The script checks the root shape, case-list field, field types, unique case IDs,
 7. Dispatch judge subagents in parallel:
    - Split cases into chunks sized for reliable review. Use as many chunks as are needed and spawn them in one tool round so the maximum available number can run concurrently.
    - Do not ask the user for artificial permission before spawning subagents; this skill is the authorization for parallel Judge work.
-   - If the platform exposes `spawn_agent`, call it once per chunk with `agent_type="worker"` and a fully assembled message.
+   - If the platform exposes `spawn_agent`, call it once per chunk with `agent_type="worker"` and a fully assembled, self-contained message. Leave `fork_context` unset or set it to `false`; do not inherit parent context.
    - If `spawn_agent` is unavailable, tell the user to enable multi-agent support and restart Codex.
    - Pass only task description, current prompt template, and the bad cases/cases under review. Do not include local paths, model config, secrets, repository history, previous private analysis, or unrelated files.
-   - The subagent prompt must be assembled by the master from `references/judge-subagent-prompt.md`; the subagent must not be asked to inspect links or paths.
+   - The subagent prompt must be assembled by the master from `references/judge-subagent-prompt.md`; the subagent must not be asked to inspect links, paths, parent context, or prior messages.
+   - Before spawning, check the message text for unresolved placeholders (`<<...>>`) and forbidden context references such as `parent context`, `父线程`, `上文`, `path`, `file`, or local filesystem paths. Fix them before dispatch.
 8. Collect each subagent result, close the agent, parse JSON, and save the raw aggregate to `.prompt-opt/subagent_reviews_<candidate_id>.json`.
 9. Aggregate subagent case scores into `.prompt-opt/judgement_<candidate_id>.json` using the Judgement JSON Contract below.
 10. Ingest judgement metrics:
