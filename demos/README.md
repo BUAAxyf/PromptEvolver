@@ -12,4 +12,4 @@
 ## 当前方案
 
 - `prompt-evolver-visualization/`：提示词优化路径可视化方案集合。
-
+- `git-diff-viewer/`：类似 PyCharm Git diff 的左右并列审阅页面，支持新增、删除、修改色块和同步滚动。
