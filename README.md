@@ -1,5 +1,7 @@
 # Prompt Evolver
 
+Chinese documentation: [README_CN.md](README_CN.md)
+
 Prompt Evolver is a local prompt optimization toolkit for a Codex-led workflow. The CLI runs repeatable automation: it validates a Mustache prompt template, renders JSON cases into task instances, calls the target model through DSPy, packages target outputs for Codex Judge review, ingests structured judgements, and writes final artifacts for the prompt selected by Codex.
 
 Codex is not the target model executor. Codex reads the target model outputs, dispatches Judge subagents for multidimensional scoring and bad-case analysis, writes structured scores and failure analysis, rewrites the prompt template as the master agent, and invokes the CLI for the next evaluation step.
@@ -168,6 +170,10 @@ prompt-evolver finalize .prompt-evolver/prompts/best.md .prompt-evolver/judgemen
 
 The Codex Skill lives in `skills/prompt-evolver`. Use it when Codex should orchestrate this workflow, dispatch parallel Judge subagents, aggregate target-model output scores, write the structured `judgement.json` consumed by the CLI, rewrite the prompt as master agent, and maintain iteration logs.
 
+## Documentation Maintenance
+
+Keep `README.md` and `README_CN.md` semantically aligned. Any future update to one README should include the same user-facing change in the other README in the same task.
+
 ## Directory Structure
 
 ```text
@@ -177,6 +183,8 @@ examples/prompt.example.md Minimal checked-in prompt example
 examples/task.example.json Minimal checked-in JSON variables example
 examples/prompt_jxb_v*.md  JXB prompt iteration history
 skills/prompt-evolver/     Codex Skill for this workflow
+README.md                  English documentation
+README_CN.md               Chinese documentation
 PLAN.md                    Original design plan
 ```
 
