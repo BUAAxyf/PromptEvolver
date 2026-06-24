@@ -2,7 +2,7 @@
 
 英文文档：[README.md](README.md)
 
-Prompt Evolver 是一个本地提示词优化工具链，用于基于文件交接的 prompt 评估工作流。CLI 负责执行可重复的自动化流程：校验 Mustache prompt 模板，将 JSON 中的多个 case 渲染成任务实例，通过 DSPy 调用目标模型，把目标模型输出打包给结构化评审流程，读取结构化评分结果，并写出选定 prompt 的最终产物。
+Prompt Evolver 是一个本地提示词优化工具链，用于基于文件交接的 prompt 评估工作流。CLI 负责执行可重复的自动化流程：校验 Mustache prompt 模板，将 JSON 中的多个 case 渲染成任务实例，调用配置好的目标模型，把目标模型输出打包给结构化评审流程，读取结构化评分结果，并写出选定 prompt 的最终产物。
 
 CLI 负责确定性的文件处理和目标模型执行步骤。Prompt 重写和评审在 CLI 外完成：读取生成的 judge pack，并按约定写入 JSON 结果。
 
@@ -10,17 +10,19 @@ CLI 负责确定性的文件处理和目标模型执行步骤。Prompt 重写和
 
 - 使用单个 JSON 文件中的多个评估 case 渲染 Mustache prompt 模板。
 - 将每个渲染后的 prompt 视为一个任务实例，也可以称为 rendered prompt、prompt instantiation 或 evaluation case/example。
-- 在 `run` 和 `optimize-step` 中通过 DSPy 调用目标模型。
+- 将一个变量文件确定性划分为训练集和测试集，默认按 `expected.ground_truth` 分层抽样，比例为 70% / 30%。
+- 在 `run` 和 `optimize-step` 中调用配置好的目标模型。
 - 通过 JSON 文件交换结构化评审结果，评审流程不耦合进 CLI。
 - prompt 生成不放在 CLI 中；根据评审结论在两轮评估之间编辑 prompt 模板。
 - 只优化 prompt template；CLI 不会重写变量文件，也不会把 bad case 追加到 prompt 中。
+- prompt 迭代只使用训练集，最终通过 `test-step` 对 held-out 测试集做一次准确率评估。
 - 支持按阈值和预算停止：目标通过率、目标平均 `score_100`、最大迭代预算。
 
 ## 环境要求
 
 - macOS 或其他类 Unix shell 环境。
 - Python 3.10 或更高版本。
-- 真实目标模型运行需要配置 DSPy 兼容的模型参数。
+- 真实目标模型运行需要配置模型参数。
 
 ## 安装
 
@@ -48,17 +50,17 @@ source venv/bin/activate
 
 CLI 从命令选项或环境变量读取模型配置：
 
-- `DSPY_MODEL`：传给 `dspy.LM` 的目标模型标识。
-- `DSPY_API_BASE`：可选 API base URL。
-- `DSPY_API_KEY`：默认 API key 环境变量。
-- `DSPY__TEMPERATURE`：可选目标模型 temperature。
-- `DSPY__MAX_TOKENS`：可选最大 token 预算。
-- `DSPY__TIMEOUT_SECONDS`：可选目标模型请求超时时间。
-- `EVO_EVAL_ENABLE_THINKING`：可选布尔值，会作为 `extra_body.enable_thinking` 传给兼容的 OpenAI 风格后端。
+- `MODEL_NAME`：目标模型标识。
+- `MODEL_API_BASE`：可选 API base URL。
+- `MODEL_API_KEY`：默认 API key 环境变量。
+- `MODEL_TEMPERATURE`：可选目标模型 temperature。
+- `MODEL_MAX_TOKENS`：可选最大 token 预算。
+- `MODEL_TIMEOUT_SECONDS`：可选目标模型请求超时时间。
+- `MODEL_ENABLE_THINKING`：可选布尔值，会作为 `extra_body.enable_thinking` 传给兼容的 OpenAI 风格后端。
 
 目标模型执行前，CLI 会自动读取当前工作目录下的 `.env`。本仓库中的 `.env*` 文件只放占位值，真实密钥应保留在本地。
 
-当设置了 `DSPY_API_BASE` 且 `DSPY_MODEL` 没有 provider 前缀时，CLI 会把它视为 OpenAI 兼容模型，并将 `openai/<DSPY_MODEL>` 传给 DSPy/LiteLLM。
+当设置了 `MODEL_API_BASE` 且 `MODEL_NAME` 没有 provider 前缀时，CLI 会把它视为 OpenAI 兼容模型，并在内部使用 `openai/<MODEL_NAME>`。
 
 查看当前模型配置：
 
@@ -75,13 +77,13 @@ prompt-evolver config init
 更新模型参数：
 
 ```bash
-prompt-evolver config set DSPY_MODEL DeepSeek-V4-Pro
-prompt-evolver config set DSPY_API_BASE https://example.com/v1
-prompt-evolver config set DSPY_API_KEY sk-...
-prompt-evolver config set DSPY__TEMPERATURE 0.1
-prompt-evolver config set DSPY__MAX_TOKENS 2048
-prompt-evolver config set DSPY__TIMEOUT_SECONDS 90
-prompt-evolver config set EVO_EVAL_ENABLE_THINKING true
+prompt-evolver config set MODEL_NAME DeepSeek-V4-Pro
+prompt-evolver config set MODEL_API_BASE https://example.com/v1
+prompt-evolver config set MODEL_API_KEY sk-...
+prompt-evolver config set MODEL_TEMPERATURE 0.1
+prompt-evolver config set MODEL_MAX_TOKENS 2048
+prompt-evolver config set MODEL_TIMEOUT_SECONDS 90
+prompt-evolver config set MODEL_ENABLE_THINKING true
 ```
 
 ## 输入格式
@@ -120,28 +122,40 @@ Return JSON with fields: label, confidence, rationale.
 
 ## CLI 工作流
 
-校验仓库内置样例输入：
+如果没有显式提供训练集和测试集，先创建默认划分。划分过程是确定性的，使用 `--train-ratio 0.7`，并按 `expected.ground_truth` 分层抽样：
 
 ```bash
-prompt-evolver validate examples/prompt.example.md examples/task.example.json
+prompt-evolver split examples/task.example.json --train-out .prompt-evolver/train.json --test-out .prompt-evolver/test.json
 ```
 
-渲染任务实例：
+用仓库内置样例 prompt 校验训练集：
 
 ```bash
-prompt-evolver render examples/prompt.example.md examples/task.example.json --out .prompt-evolver/rendered_cases.jsonl
+prompt-evolver validate examples/prompt.example.md .prompt-evolver/train.json
 ```
 
-运行目标模型：
+最终评估前，只允许对测试文件做格式校验；不要用测试 case 或 expected output 参与 prompt 迭代：
 
 ```bash
-prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/target_outputs.jsonl --model "$DSPY_MODEL"
+prompt-evolver validate examples/prompt.example.md .prompt-evolver/test.json
+```
+
+渲染训练任务实例：
+
+```bash
+prompt-evolver render examples/prompt.example.md .prompt-evolver/train.json --out .prompt-evolver/rendered_cases.jsonl
+```
+
+在训练集上运行目标模型：
+
+```bash
+prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/target_outputs.jsonl --model "$MODEL_NAME"
 ```
 
 打包结构化评审材料：
 
 ```bash
-prompt-evolver judge-pack .prompt-evolver/rendered_cases.jsonl .prompt-evolver/target_outputs.jsonl examples/task.example.json --out .prompt-evolver/judge_pack.json
+prompt-evolver judge-pack .prompt-evolver/rendered_cases.jsonl .prompt-evolver/target_outputs.jsonl .prompt-evolver/train.json --out .prompt-evolver/judge_pack.json
 ```
 
 写入 `judgement.json` 后，读取评分结果：
@@ -153,7 +167,7 @@ prompt-evolver ingest-judgement .prompt-evolver/judgement.json --out-dir .prompt
 执行一轮自动目标模型评估并生成 judge pack：
 
 ```bash
-prompt-evolver optimize-step examples/prompt.example.md examples/task.example.json --out-dir .prompt-evolver --candidate-id initial --model "$DSPY_MODEL"
+prompt-evolver optimize-step examples/prompt.example.md .prompt-evolver/train.json --out-dir .prompt-evolver --candidate-id initial --model "$MODEL_NAME"
 ```
 
 仓库内置样例文件是 `examples/prompt.example.md` 和 `examples/task.example.json`。本地工作输入 `examples/prompt.md` 和 `examples/task.json` 已被忽略，真实 prompt 和评估数据可以保留在本机。
@@ -166,17 +180,31 @@ CLI 不生成下一版 prompt。根据评审结论编辑 prompt 模板，在 `.p
 prompt-evolver finalize .prompt-evolver/prompts/best.md .prompt-evolver/judgement_best.json --out-dir .prompt-evolver/final
 ```
 
+训练达到停止条件或迭代预算耗尽后，对 held-out 测试集只运行一次准确率评估：
+
+```bash
+prompt-evolver test-step .prompt-evolver/final/best_prompt.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id final_test --model "$MODEL_NAME"
+```
+
+如果目标模型输出已经存在，可以直接评分：
+
+```bash
+prompt-evolver score-accuracy .prompt-evolver/test.json .prompt-evolver/target_outputs_final_test.jsonl --out .prompt-evolver/accuracy_final_test.json
+```
+
 ## Skill 用法
 
 Skill 位于 `skills/prompt-evolver`。它围绕 CLI 提供可重复工作流：输入校验、单轮目标模型评估、judge pack 评审、prompt 迭代和最终产物写出。
 
 可以直接使用这些简短提示词：
 
-- 输入校验：`使用 $prompt-evolver 校验 examples/prompt.example.md 和 examples/task.example.json，模型调用前先确认输入有效。`
-- 单轮评估：`使用 $prompt-evolver 对 examples/prompt.example.md 和 examples/task.example.json 运行一轮 optimize-step，并把 judge pack 保存到 .prompt-evolver。`
+- 数据划分：`使用 $prompt-evolver 按默认分层 70/30 方法，将 examples/task.example.json 划分为训练集和测试集。`
+- 输入校验：`使用 $prompt-evolver 在训练模型调用前校验 examples/prompt.example.md 和 .prompt-evolver/train.json。`
+- 单轮评估：`使用 $prompt-evolver 对 examples/prompt.example.md 和 .prompt-evolver/train.json 运行一轮 optimize-step，并把 judge pack 保存到 .prompt-evolver。`
 - 输出评审：`使用 $prompt-evolver 审阅 judge pack，逐 case 打分，并按约定 schema 写入 judgement JSON。`
 - 改进 prompt：`使用 $prompt-evolver 总结失败 case，更新 prompt 模板，并把本轮迭代记录到 .prompt-evolver/optimization_log.jsonl。`
 - 最终产物：`使用 $prompt-evolver 将选定 prompt 和 judgement 写出到 .prompt-evolver/final。`
+- Held-out 测试：`使用 $prompt-evolver 对 .prompt-evolver/test.json 只运行一次 test-step，并报告 .prompt-evolver/accuracy_final_test.json。`
 
 ## 文档维护
 
@@ -210,4 +238,4 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 python3 -m compileall src tests
 ```
 
-真实模型执行前，请先配置 `DSPY_MODEL` 和凭据。
+真实模型执行前，请先配置 `MODEL_NAME` 和凭据。

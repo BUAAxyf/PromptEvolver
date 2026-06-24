@@ -58,7 +58,7 @@ When the root is an array, it is treated as the case list. `task` and `globals` 
 
 | Field | Type | Required | Meaning |
 |---|---|---:|---|
-| `task` | object | No | Task-level metadata for Codex Judge, such as `name`, `description`, and `rubric`. The CLI passes it into the judge pack but does not enforce inner field names. |
+| `task` | object | No | Task-level metadata for structured review, such as `name`, `description`, and `rubric`. The CLI passes it into the judge pack but does not enforce inner field names. |
 | `globals` | object | No | Variables merged into every case before rendering. Case-level variables override duplicate global keys. |
 | `cases` | array<object> | Conditionally yes | Primary case list field. Required when the root is an object unless `examples` or `evaluation_cases` is provided. Must contain at least one item. |
 | `examples` | array<object> | Conditionally yes | Alias for `cases`. Use only one case-list field for clarity. |
@@ -78,7 +78,7 @@ Root object validation rules:
 | `id` | string-compatible | No | Preferred case identifier. Must be unique after string conversion. |
 | `case_id` | string-compatible | No | Alias for `id`. Used only when `id` is absent. |
 | `variables` | object | No | Variables used to render the Mustache prompt template. Required in practice when all variables are not expressed as top-level non-reserved fields. |
-| `expected` | any JSON value | No | Expected answer or labels for Codex Judge. Passed through unchanged. |
+| `expected` | any JSON value | No | Expected answer or labels for structured review and accuracy scoring. Passed through unchanged. |
 | `expected_output` | any JSON value | No | Alias for `expected`; used only when `expected` is absent. |
 | `rubric` | any JSON value | No | Case-specific judging guidance. Passed through unchanged. |
 | `metadata` | object | No | Extra case metadata for judge analysis or reporting. Must be an object when present. |
@@ -94,6 +94,48 @@ Case validation and normalization rules:
 - Reserved case fields are `id`, `case_id`, `variables`, `expected`, `expected_output`, `rubric`, `metadata`, and `notes`.
 - Effective render variables are `globals` merged with case variables; case variables win on key conflict.
 - The CLI never modifies the variables JSON during optimization.
+
+## Train/Test Split And Accuracy Fields
+
+When the workflow needs train/test files and the user has not provided them, run:
+
+```bash
+prompt-evolver split <task.json> --train-out .prompt-evolver/train.json --test-out .prompt-evolver/test.json
+```
+
+The split command preserves the root shape and top-level metadata, then writes two variables JSON files. It uses deterministic stratified sampling with default `--train-ratio 0.7` and `--seed 13`. The stratification key is selected in this order:
+
+1. `expected.ground_truth`
+2. `expected.primary`
+3. The complete `expected` value
+
+For held-out accuracy scoring, prefer this `expected` shape when possible:
+
+```json
+{
+  "expected": {
+    "ground_truth": {
+      "label": "billing"
+    },
+    "acceptable_outputs": [
+      {
+        "label": "billing"
+      }
+    ]
+  }
+}
+```
+
+`prompt-evolver score-accuracy` and `prompt-evolver test-step` score each target output with this priority:
+
+- `expected.acceptable_outputs`, when it is a non-empty array.
+- `expected.primary`, when present.
+- `expected.ground_truth`, when present.
+- The complete `expected` value as a fallback.
+
+For object expected values, the expected object only needs to be a subset of the target output object, so extra model fields are allowed. `ground_truth` may also be a string containing JSON alternatives separated by ` or `, for example `{"label":"billing"} or {"label":"refund"}`.
+
+The training phase must use only the training JSON. Before final evaluation, the test JSON may be format-validated, but test case content and expected answers must not be used for prompt iteration.
 
 ## Prompt Variable Requirements
 

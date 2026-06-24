@@ -1,3 +1,5 @@
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,6 +15,9 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertNotIn("propose", result.output)
         self.assertIn("optimize-step", result.output)
+        self.assertIn("split", result.output)
+        self.assertIn("test-step", result.output)
+        self.assertIn("score-accuracy", result.output)
 
     def test_skill_reference_contains_subagent_guardrails(self):
         root = Path(__file__).resolve().parents[1]
@@ -22,6 +27,50 @@ class CliContractTests(unittest.TestCase):
         self.assertIn("不要增加badcase", text)
         self.assertIn("Do not ask for files, links, paths", text)
         self.assertIn("dimension_scores", text)
+
+    def test_split_command_writes_default_outputs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            variables = root / "task.json"
+            train = root / "train.json"
+            test = root / "test.json"
+            variables.write_text(
+                json.dumps(
+                    {
+                        "cases": [
+                            {
+                                "id": f"case_{index}",
+                                "variables": {"request": f"request {index}"},
+                                "expected": {
+                                    "ground_truth": {
+                                        "label": "billing" if index < 2 else "technical"
+                                    }
+                                },
+                            }
+                            for index in range(4)
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = CliRunner().invoke(
+                app,
+                [
+                    "split",
+                    str(variables),
+                    "--train-out",
+                    str(train),
+                    "--test-out",
+                    str(test),
+                ],
+            )
+
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertTrue(train.exists())
+            self.assertTrue(test.exists())
+            self.assertEqual(len(json.loads(train.read_text(encoding="utf-8"))["cases"]), 2)
+            self.assertEqual(len(json.loads(test.read_text(encoding="utf-8"))["cases"]), 2)
 
     def test_skill_reference_documents_input_json_format(self):
         root = Path(__file__).resolve().parents[1]
@@ -40,6 +89,8 @@ class CliContractTests(unittest.TestCase):
             "| `variables` | object | No |",
             "Reserved case fields are",
             "Effective render variables are `globals` merged with case variables",
+            "Train/Test Split And Accuracy Fields",
+            "expected.ground_truth",
         ):
             self.assertIn(required_text, reference_text)
 

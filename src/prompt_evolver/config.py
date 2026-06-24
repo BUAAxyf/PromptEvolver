@@ -5,25 +5,25 @@ from pathlib import Path
 from typing import Any
 
 MODEL_CONFIG_FIELDS: tuple[str, ...] = (
-    "DSPY_MODEL",
-    "DSPY_API_BASE",
-    "DSPY_API_KEY",
-    "DSPY__TEMPERATURE",
-    "DSPY__MAX_TOKENS",
-    "DSPY__TIMEOUT_SECONDS",
-    "EVO_EVAL_ENABLE_THINKING",
+    "MODEL_NAME",
+    "MODEL_API_BASE",
+    "MODEL_API_KEY",
+    "MODEL_TEMPERATURE",
+    "MODEL_MAX_TOKENS",
+    "MODEL_TIMEOUT_SECONDS",
+    "MODEL_ENABLE_THINKING",
 )
 
-SECRET_FIELDS = {"DSPY_API_KEY"}
+SECRET_FIELDS = {"MODEL_API_KEY"}
 
 DEFAULT_MODEL_CONFIG: dict[str, str] = {
-    "DSPY_MODEL": "",
-    "DSPY_API_BASE": "",
-    "DSPY_API_KEY": "",
-    "DSPY__TEMPERATURE": "0.1",
-    "DSPY__MAX_TOKENS": "2048",
-    "DSPY__TIMEOUT_SECONDS": "90",
-    "EVO_EVAL_ENABLE_THINKING": "true",
+    "MODEL_NAME": "",
+    "MODEL_API_BASE": "",
+    "MODEL_API_KEY": "",
+    "MODEL_TEMPERATURE": "0.1",
+    "MODEL_MAX_TOKENS": "2048",
+    "MODEL_TIMEOUT_SECONDS": "90",
+    "MODEL_ENABLE_THINKING": "true",
 }
 
 
@@ -101,10 +101,10 @@ def model_config_status(path: Path | str = ".env", reveal_secrets: bool = False)
         for key in MODEL_CONFIG_FIELDS
     }
     missing_required = [
-        key for key in ("DSPY_MODEL",) if not effective_values.get(key)
+        key for key in ("MODEL_NAME",) if not effective_values.get(key)
     ]
     missing_recommended = [
-        key for key in ("DSPY_API_KEY",) if not effective_values.get(key)
+        key for key in ("MODEL_API_KEY",) if not effective_values.get(key)
     ]
     return {
         "env_file": str(env_path),
@@ -127,12 +127,12 @@ def first_use_guidance(missing_keys: list[str], env_file: Path | str = ".env") -
     if not env_path.exists():
         steps.append(f"prompt-evolver config init --env-file {env_path}")
     for key in missing_keys:
-        if key == "DSPY_MODEL":
-            steps.append(f"prompt-evolver config set DSPY_MODEL <model-name> --env-file {env_path}")
-        elif key == "DSPY_API_BASE":
-            steps.append(f"prompt-evolver config set DSPY_API_BASE <api-base-url> --env-file {env_path}")
-        elif key == "DSPY_API_KEY":
-            steps.append(f"prompt-evolver config set DSPY_API_KEY <api-key> --env-file {env_path}")
+        if key == "MODEL_NAME":
+            steps.append(f"prompt-evolver config set MODEL_NAME <model-name> --env-file {env_path}")
+        elif key == "MODEL_API_BASE":
+            steps.append(f"prompt-evolver config set MODEL_API_BASE <api-base-url> --env-file {env_path}")
+        elif key == "MODEL_API_KEY":
+            steps.append(f"prompt-evolver config set MODEL_API_KEY <api-key> --env-file {env_path}")
     if not steps:
         steps.append("prompt-evolver config show")
     return steps
@@ -157,19 +157,19 @@ def validate_model_config_value(key: str, value: str) -> None:
     if key not in MODEL_CONFIG_FIELDS:
         allowed = ", ".join(MODEL_CONFIG_FIELDS)
         raise ValueError(f"unsupported model config key: {key}. Allowed keys: {allowed}")
-    if key == "DSPY__TEMPERATURE":
+    if key == "MODEL_TEMPERATURE":
         parsed = float(value)
         if parsed < 0:
-            raise ValueError("DSPY__TEMPERATURE must be >= 0")
-    elif key == "DSPY__MAX_TOKENS":
+            raise ValueError("MODEL_TEMPERATURE must be >= 0")
+    elif key == "MODEL_MAX_TOKENS":
         parsed = int(value)
         if parsed <= 0:
-            raise ValueError("DSPY__MAX_TOKENS must be > 0")
-    elif key == "DSPY__TIMEOUT_SECONDS":
+            raise ValueError("MODEL_MAX_TOKENS must be > 0")
+    elif key == "MODEL_TIMEOUT_SECONDS":
         parsed = float(value)
         if parsed <= 0:
-            raise ValueError("DSPY__TIMEOUT_SECONDS must be > 0")
-    elif key == "EVO_EVAL_ENABLE_THINKING":
+            raise ValueError("MODEL_TIMEOUT_SECONDS must be > 0")
+    elif key == "MODEL_ENABLE_THINKING":
         env_bool_value(value, key)
 
 

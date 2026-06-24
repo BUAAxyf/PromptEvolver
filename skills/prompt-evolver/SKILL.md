@@ -1,6 +1,6 @@
 ---
 name: prompt-evolver
-description: Use when Codex needs to optimize a Mustache prompt template with a JSON multi-case variables file by orchestrating the local `prompt-evolver` CLI, dispatching parallel judge subagents, aggregating scores and failure analysis, rewriting the prompt template as master agent, and logging every iteration without using Codex as the target model executor.
+description: Use when optimizing a Mustache prompt template with JSON cases through the local `prompt-evolver` CLI, including default stratified train/test splitting, train-only iterative prompt optimization, held-out test accuracy evaluation, parallel judge review, prompt rewriting, and iteration logging.
 ---
 
 # Prompt Evolver
@@ -14,12 +14,14 @@ description: Use when Codex needs to optimize a Mustache prompt template with a 
 - Do not let the CLI generate, rewrite, or patch prompt templates.
 - Do not edit the variables JSON unless the user explicitly asks for dataset maintenance. If cases or rubrics are inadequate, report that separately.
 - Optimize only the prompt template.
+- Keep training and test phases isolated. Training may only use the training set; the held-out test set is used once for final accuracy evaluation.
 
 ## Required Inputs
 
 - A Mustache prompt template, usually `prompt.md`.
 - A JSON variables file with multiple cases, usually `task.json`.
 - Optional target thresholds: `target_pass_rate`, `target_average_score_100`, and max iteration budget.
+- Optional explicit train/test files. If the user does not specify whether to split data, split the provided variables file with the default stratified 70% train / 30% test method.
 
 Use these terms consistently:
 
@@ -45,6 +47,21 @@ python skills/prompt-evolver/scripts/validate_input_json.py <task.json> --prompt
 
 The script checks the root shape, case-list field, field types, unique case IDs, `globals` merging, inferred variables, and optional Mustache variable coverage. It prints a JSON report and exits non-zero when the input does not match `references/input-json-format.md`.
 
+## Train/Test Phase Policy
+
+- If only one variables file is provided and the user does not explicitly opt out of splitting, run:
+
+  ```bash
+  prompt-evolver split <task.json> --train-out .prompt-evolver/train.json --test-out .prompt-evolver/test.json
+  ```
+
+- The split command uses deterministic stratified sampling by `expected.ground_truth`, with default `--train-ratio 0.7`.
+- During training, all CLI evaluation inputs must point to the training set only.
+- Do not open, inspect, summarize, copy, or show held-out test cases, expected labels, rubrics, outputs, or ground-truth distributions before final evaluation.
+- Before final evaluation, only run format validation on the test file. Do not use test validation output to tune the prompt.
+- Start final test evaluation only after training has met the stopping criteria or the iteration budget is exhausted.
+- Testing is single-round accuracy scoring only. Do not dispatch judge subagents, rewrite the prompt, or start another optimization iteration from test results.
+
 ## Subagent Context Isolation Policy
 
 The master must treat every Judge subagent as context-isolated. Do not rely on inherited parent conversation, prior tool output, local files, or repository paths.
@@ -65,15 +82,21 @@ Required rules:
 
 ## Workflow
 
-1. Read the prompt template and variables JSON to understand task intent, expected outputs, and rubric.
-2. Create or append an optimization log at `.prompt-evolver/optimization_log.jsonl`. Each iteration must record at least:
+1. Read the prompt template and variables JSON only as needed to identify the input shape and prepare datasets. Do not inspect held-out test case content, expected outputs, labels, or distributions.
+2. Prepare datasets:
+   - If explicit train/test files are provided, use them as given.
+   - Otherwise run the default split command from the Train/Test Phase Policy.
+   - Set `train_json` to the training file and `test_json` to the held-out test file.
+   - Validate `test_json` format only; do not inspect its case content before final evaluation.
+   - Use `train_json` to understand task intent, expected outputs, and rubric for prompt iteration.
+3. Create or append an optimization log at `.prompt-evolver/optimization_log.jsonl`. Each iteration must record at least:
    - `candidate_id`
    - full prompt text or prompt path plus SHA-256
    - optimization strategy used for this generation
    - subagent optimization suggestions
    - evaluation metrics and failure summaries
    - generated artifact paths
-3. Check target model configuration before calling the target model:
+4. Check target model configuration before calling the target model:
 
    ```bash
    prompt-evolver config show
@@ -83,31 +106,31 @@ Required rules:
 
    ```bash
    prompt-evolver config init
-   prompt-evolver config set DSPY_MODEL <model-name>
-   prompt-evolver config set DSPY_API_BASE <api-base-url>
-   prompt-evolver config set DSPY_API_KEY <api-key>
-   prompt-evolver config set DSPY__TEMPERATURE 0.1
-   prompt-evolver config set DSPY__MAX_TOKENS 2048
-   prompt-evolver config set DSPY__TIMEOUT_SECONDS 90
-   prompt-evolver config set EVO_EVAL_ENABLE_THINKING true
+   prompt-evolver config set MODEL_NAME <model-name>
+   prompt-evolver config set MODEL_API_BASE <api-base-url>
+   prompt-evolver config set MODEL_API_KEY <api-key>
+   prompt-evolver config set MODEL_TEMPERATURE 0.1
+   prompt-evolver config set MODEL_MAX_TOKENS 2048
+   prompt-evolver config set MODEL_TIMEOUT_SECONDS 90
+   prompt-evolver config set MODEL_ENABLE_THINKING true
    ```
 
    Do not print real API keys in responses or logs.
-4. Run validation:
+5. Run training-set validation:
 
    ```bash
-   prompt-evolver validate <prompt.md> <task.json>
+   prompt-evolver validate <prompt.md> <train_json>
    ```
 
-5. Run one target-model evaluation step:
+6. Run one training-set target-model evaluation step:
 
    ```bash
-   prompt-evolver optimize-step <prompt.md> <task.json> --out-dir .prompt-evolver --candidate-id <candidate_id> --model "$DSPY_MODEL"
+   prompt-evolver optimize-step <prompt.md> <train_json> --out-dir .prompt-evolver --candidate-id <candidate_id> --model "$MODEL_NAME"
    ```
 
    This command only renders cases, calls the target model, and writes `judge_pack_<candidate_id>.json`. It does not generate the next prompt.
-6. Open `judge_pack_<candidate_id>.json`.
-7. Dispatch judge subagents in parallel:
+7. Open `judge_pack_<candidate_id>.json`.
+8. Dispatch judge subagents in parallel:
    - Split cases into chunks sized for reliable review. Use as many chunks as are needed and spawn them in one tool round so the maximum available number can run concurrently.
    - Do not ask the user for artificial permission before spawning subagents; this skill is the authorization for parallel Judge work.
    - If the platform exposes `spawn_agent`, call it once per chunk with `agent_type="worker"` and a fully assembled, self-contained message. Leave `fork_context` unset or set it to `false`; do not inherit parent context.
@@ -115,26 +138,33 @@ Required rules:
    - Pass only task description, current prompt template, and the bad cases/cases under review. Do not include local paths, model config, secrets, repository history, previous private analysis, or unrelated files.
    - The subagent prompt must be assembled by the master from `references/judge-subagent-prompt.md`; the subagent must not be asked to inspect links, paths, parent context, or prior messages.
    - Before spawning, check the message text for unresolved placeholders (`<<...>>`) and forbidden context references such as `parent context`, `父线程`, `上文`, `path`, `file`, or local filesystem paths. Fix them before dispatch.
-8. Collect each subagent result, close the agent, parse JSON, and save the raw aggregate to `.prompt-evolver/subagent_reviews_<candidate_id>.json`.
-9. Aggregate subagent case scores into `.prompt-evolver/judgement_<candidate_id>.json` using the Judgement JSON Contract below.
-10. Ingest judgement metrics:
+9. Collect each subagent result, close the agent, parse JSON, and save the raw aggregate to `.prompt-evolver/subagent_reviews_<candidate_id>.json`.
+10. Aggregate subagent case scores into `.prompt-evolver/judgement_<candidate_id>.json` using the Judgement JSON Contract below.
+11. Ingest judgement metrics:
 
     ```bash
     prompt-evolver ingest-judgement .prompt-evolver/judgement_<candidate_id>.json --out-dir .prompt-evolver
     ```
 
-11. If thresholds are not met and budget remains, the master agent creates the next prompt template directly:
+12. If thresholds are not met and budget remains, the master agent creates the next prompt template directly:
     - Use the current prompt and aggregated subagent suggestions.
     - Fix rules, decision logic, priority order, output contract, or ambiguity in the existing prompt.
     - Do not add raw bad cases, case IDs, case-specific examples, or a growing failure list to the prompt.
     - Preserve Mustache variables and task intent.
     - Save the next prompt with a version suffix, for example `.prompt-evolver/prompts/<next_candidate_id>.md`.
-12. Repeat `optimize-step -> subagent review -> judgement ingest -> master prompt rewrite` until both target pass rate and target average `score_100` are reached, or the iteration/budget limit is exhausted.
-13. Finalize the prompt selected by the master:
+13. Repeat `optimize-step -> subagent review -> judgement ingest -> master prompt rewrite` using only `train_json` until both target pass rate and target average `score_100` are reached, or the iteration/budget limit is exhausted.
+14. Finalize the prompt selected by the training phase:
 
     ```bash
     prompt-evolver finalize <best_prompt.md> .prompt-evolver/judgement_<best_candidate_id>.json --out-dir .prompt-evolver/final
     ```
+15. Run held-out test accuracy once:
+
+    ```bash
+    prompt-evolver test-step <best_prompt.md> <test_json> --out-dir .prompt-evolver --candidate-id final_test --model "$MODEL_NAME"
+    ```
+
+    Report `.prompt-evolver/accuracy_final_test.json` as the final held-out accuracy. Do not rewrite the prompt after this step.
 
 ## Judgement JSON Contract
 

@@ -9,6 +9,8 @@ from prompt_evolver.workflow import (
     ingest_judgement,
     make_judge_pack,
     render_cases,
+    score_accuracy,
+    split_train_test,
 )
 
 
@@ -92,6 +94,78 @@ class WorkflowFileTests(unittest.TestCase):
             self.assertEqual(summary["selected_candidate_id"], "initial")
             self.assertTrue((root / "final" / "best_prompt.md").exists())
             self.assertFalse((root / ".prompt-evolver" / "candidates.jsonl").exists())
+
+    def test_split_train_test_stratifies_by_ground_truth(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            variables = root / "task.json"
+            train = root / "train.json"
+            test = root / "test.json"
+            cases = []
+            for label in ("billing", "technical"):
+                for index in range(10):
+                    cases.append(
+                        {
+                            "id": f"{label}_{index}",
+                            "variables": {"request": f"{label} request {index}"},
+                            "expected": {"ground_truth": {"label": label}},
+                        }
+                    )
+            variables.write_text(json.dumps({"cases": cases}), encoding="utf-8")
+
+            result = split_train_test(variables, train, test, train_ratio=0.7, seed=1)
+            train_cases = json.loads(train.read_text(encoding="utf-8"))["cases"]
+            test_cases = json.loads(test.read_text(encoding="utf-8"))["cases"]
+
+        self.assertEqual(result["train_count"], 14)
+        self.assertEqual(result["test_count"], 6)
+        self.assertEqual({case["expected"]["ground_truth"]["label"] for case in train_cases}, {"billing", "technical"})
+        self.assertEqual({case["expected"]["ground_truth"]["label"] for case in test_cases}, {"billing", "technical"})
+        self.assertFalse({case["id"] for case in train_cases} & {case["id"] for case in test_cases})
+
+    def test_score_accuracy_uses_acceptable_outputs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            variables = root / "task.json"
+            outputs = root / "outputs.jsonl"
+            report = root / "accuracy.json"
+            variables.write_text(
+                json.dumps(
+                    {
+                        "cases": [
+                            {
+                                "id": "ok",
+                                "variables": {"request": "refund"},
+                                "expected": {
+                                    "acceptable_outputs": [{"label": "billing"}],
+                                },
+                            },
+                            {
+                                "id": "bad",
+                                "variables": {"request": "login"},
+                                "expected": {
+                                    "acceptable_outputs": [{"label": "technical"}],
+                                },
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            write_jsonl(
+                outputs,
+                [
+                    {"case_id": "ok", "output_text": '{"label":"billing","confidence":0.9}'},
+                    {"case_id": "bad", "output_text": '{"label":"account"}'},
+                ],
+            )
+
+            result = score_accuracy(variables, outputs, report)
+            self.assertTrue(report.exists())
+
+        self.assertEqual(result["case_count"], 2)
+        self.assertEqual(result["correct_count"], 1)
+        self.assertEqual(result["accuracy"], 0.5)
 
 
 if __name__ == "__main__":

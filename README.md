@@ -2,7 +2,7 @@
 
 Chinese documentation: [README_CN.md](README_CN.md)
 
-Prompt Evolver is a local prompt optimization toolkit for file-based prompt evaluation workflows. The CLI runs repeatable automation: it validates a Mustache prompt template, renders JSON cases into task instances, calls the target model through DSPy, packages target outputs for structured review, ingests structured judgements, and writes final artifacts for the selected prompt.
+Prompt Evolver is a local prompt optimization toolkit for file-based prompt evaluation workflows. The CLI runs repeatable automation: it validates a Mustache prompt template, renders JSON cases into task instances, calls the configured target model, packages target outputs for structured review, ingests structured judgements, and writes final artifacts for the selected prompt.
 
 The CLI is responsible for deterministic file and model-execution steps. Prompt rewriting and judgement happen outside the CLI by reading the generated judge pack and writing the expected JSON contracts.
 
@@ -10,17 +10,19 @@ The CLI is responsible for deterministic file and model-execution steps. Prompt 
 
 - Render a Mustache prompt template with a single JSON file containing multiple evaluation cases.
 - Treat each rendered prompt as a task instance, also called a rendered prompt, prompt instantiation, or evaluation case/example.
-- Call the target model with DSPy in `run` and `optimize-step`.
+- Split one variables file into deterministic train and test files, stratified by `expected.ground_truth` with a default 70% / 30% ratio.
+- Call the configured target model in `run` and `optimize-step`.
 - Exchange structured judgement results through JSON files instead of coupling review to the CLI.
 - Keep prompt generation outside the CLI; edit the prompt template from review findings between evaluation steps.
 - Optimize only the prompt template; the CLI never rewrites the variables file or appends bad cases to prompts.
+- Keep prompt iteration on the training set and run held-out test accuracy once with `test-step`.
 - Support stopping by threshold and budget: target pass rate, target average `score_100`, and max iteration budget.
 
 ## Environment Requirements
 
 - macOS or another Unix-like shell environment.
 - Python 3.10 or newer.
-- A DSPy-compatible model configuration for real target model runs.
+- Target model configuration for real model runs.
 
 ## Installation
 
@@ -48,17 +50,17 @@ source venv/bin/activate
 
 The CLI reads model settings from command options or environment variables:
 
-- `DSPY_MODEL`: target model identifier passed to `dspy.LM`.
-- `DSPY_API_BASE`: optional API base URL.
-- `DSPY_API_KEY`: default API key environment variable.
-- `DSPY__TEMPERATURE`: optional target-model temperature.
-- `DSPY__MAX_TOKENS`: optional max token budget.
-- `DSPY__TIMEOUT_SECONDS`: optional target-model request timeout.
-- `EVO_EVAL_ENABLE_THINKING`: optional boolean passed to compatible OpenAI-style backends as `extra_body.enable_thinking`.
+- `MODEL_NAME`: target model identifier.
+- `MODEL_API_BASE`: optional API base URL.
+- `MODEL_API_KEY`: default API key environment variable.
+- `MODEL_TEMPERATURE`: optional target-model temperature.
+- `MODEL_MAX_TOKENS`: optional max token budget.
+- `MODEL_TIMEOUT_SECONDS`: optional target-model request timeout.
+- `MODEL_ENABLE_THINKING`: optional boolean passed to compatible OpenAI-style backends as `extra_body.enable_thinking`.
 
 The CLI automatically reads `.env` from the current working directory before target model execution. The `.env*` files in this repository contain placeholders only. Keep real secrets local.
 
-When `DSPY_API_BASE` is set and `DSPY_MODEL` has no provider prefix, the CLI treats it as an OpenAI-compatible model and passes `openai/<DSPY_MODEL>` to DSPy/LiteLLM.
+When `MODEL_API_BASE` is set and `MODEL_NAME` has no provider prefix, the CLI treats it as an OpenAI-compatible model and uses `openai/<MODEL_NAME>` internally.
 
 View current model configuration:
 
@@ -75,13 +77,13 @@ prompt-evolver config init
 Update a model parameter:
 
 ```bash
-prompt-evolver config set DSPY_MODEL DeepSeek-V4-Pro
-prompt-evolver config set DSPY_API_BASE https://example.com/v1
-prompt-evolver config set DSPY_API_KEY sk-...
-prompt-evolver config set DSPY__TEMPERATURE 0.1
-prompt-evolver config set DSPY__MAX_TOKENS 2048
-prompt-evolver config set DSPY__TIMEOUT_SECONDS 90
-prompt-evolver config set EVO_EVAL_ENABLE_THINKING true
+prompt-evolver config set MODEL_NAME DeepSeek-V4-Pro
+prompt-evolver config set MODEL_API_BASE https://example.com/v1
+prompt-evolver config set MODEL_API_KEY sk-...
+prompt-evolver config set MODEL_TEMPERATURE 0.1
+prompt-evolver config set MODEL_MAX_TOKENS 2048
+prompt-evolver config set MODEL_TIMEOUT_SECONDS 90
+prompt-evolver config set MODEL_ENABLE_THINKING true
 ```
 
 ## Input Format
@@ -120,28 +122,40 @@ The variables file is one JSON file with multiple cases:
 
 ## CLI Workflow
 
-Validate the checked-in sample inputs:
+When no explicit train/test files are provided, create the default split first. The split is deterministic, uses `--train-ratio 0.7`, and stratifies by `expected.ground_truth`:
 
 ```bash
-prompt-evolver validate examples/prompt.example.md examples/task.example.json
+prompt-evolver split examples/task.example.json --train-out .prompt-evolver/train.json --test-out .prompt-evolver/test.json
 ```
 
-Render task instances:
+Validate the checked-in sample prompt against the training set:
 
 ```bash
-prompt-evolver render examples/prompt.example.md examples/task.example.json --out .prompt-evolver/rendered_cases.jsonl
+prompt-evolver validate examples/prompt.example.md .prompt-evolver/train.json
 ```
 
-Run the target model:
+Before final evaluation, the test file may be format-validated, but test cases and expected outputs should not be used for prompt iteration:
 
 ```bash
-prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/target_outputs.jsonl --model "$DSPY_MODEL"
+prompt-evolver validate examples/prompt.example.md .prompt-evolver/test.json
+```
+
+Render training task instances:
+
+```bash
+prompt-evolver render examples/prompt.example.md .prompt-evolver/train.json --out .prompt-evolver/rendered_cases.jsonl
+```
+
+Run the target model on the training set:
+
+```bash
+prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/target_outputs.jsonl --model "$MODEL_NAME"
 ```
 
 Package materials for structured review:
 
 ```bash
-prompt-evolver judge-pack .prompt-evolver/rendered_cases.jsonl .prompt-evolver/target_outputs.jsonl examples/task.example.json --out .prompt-evolver/judge_pack.json
+prompt-evolver judge-pack .prompt-evolver/rendered_cases.jsonl .prompt-evolver/target_outputs.jsonl .prompt-evolver/train.json --out .prompt-evolver/judge_pack.json
 ```
 
 After `judgement.json` is written, ingest it:
@@ -153,7 +167,7 @@ prompt-evolver ingest-judgement .prompt-evolver/judgement.json --out-dir .prompt
 Run one automated target-model step and produce a judge pack:
 
 ```bash
-prompt-evolver optimize-step examples/prompt.example.md examples/task.example.json --out-dir .prompt-evolver --candidate-id initial --model "$DSPY_MODEL"
+prompt-evolver optimize-step examples/prompt.example.md .prompt-evolver/train.json --out-dir .prompt-evolver --candidate-id initial --model "$MODEL_NAME"
 ```
 
 The checked-in sample files are `examples/prompt.example.md` and `examples/task.example.json`. Local working inputs named `examples/prompt.md` and `examples/task.json` are ignored so real prompts and evaluation data can stay private.
@@ -166,17 +180,31 @@ Finalize the selected prompt:
 prompt-evolver finalize .prompt-evolver/prompts/best.md .prompt-evolver/judgement_best.json --out-dir .prompt-evolver/final
 ```
 
+After training reaches the stopping criteria or the iteration budget is exhausted, run held-out test accuracy once:
+
+```bash
+prompt-evolver test-step .prompt-evolver/final/best_prompt.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id final_test --model "$MODEL_NAME"
+```
+
+If target outputs already exist, score them directly:
+
+```bash
+prompt-evolver score-accuracy .prompt-evolver/test.json .prompt-evolver/target_outputs_final_test.jsonl --out .prompt-evolver/accuracy_final_test.json
+```
+
 ## Skill Usage
 
 The Skill lives in `skills/prompt-evolver`. It provides a repeatable workflow around the CLI: input validation, one-step target-model evaluation, judge-pack review, prompt iteration, and finalization.
 
 Use these short prompts as starting points:
 
-- Input validation: `Use $prompt-evolver to validate examples/prompt.example.md and examples/task.example.json before any model call.`
-- One evaluation step: `Use $prompt-evolver to run one optimize-step for examples/prompt.example.md and examples/task.example.json, then save the judge pack under .prompt-evolver.`
+- Dataset split: `Use $prompt-evolver to split examples/task.example.json into train and test files with the default stratified 70/30 method.`
+- Input validation: `Use $prompt-evolver to validate examples/prompt.example.md against .prompt-evolver/train.json before any training model call.`
+- One evaluation step: `Use $prompt-evolver to run one optimize-step for examples/prompt.example.md and .prompt-evolver/train.json, then save the judge pack under .prompt-evolver.`
 - Review outputs: `Use $prompt-evolver to review the judge pack, score each case, and write judgement JSON in the expected schema.`
 - Improve the prompt: `Use $prompt-evolver to summarize failing cases, update the prompt template, and record the iteration in .prompt-evolver/optimization_log.jsonl.`
 - Finalize: `Use $prompt-evolver to finalize the selected prompt and judgement into .prompt-evolver/final.`
+- Held-out testing: `Use $prompt-evolver to run test-step once on .prompt-evolver/test.json and report .prompt-evolver/accuracy_final_test.json.`
 
 ## Documentation Maintenance
 
@@ -210,4 +238,4 @@ Run a syntax compile check:
 python3 -m compileall src tests
 ```
 
-For real model execution, configure `DSPY_MODEL` and credentials first.
+For real model execution, configure `MODEL_NAME` and credentials first.

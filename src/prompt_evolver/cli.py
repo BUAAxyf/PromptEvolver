@@ -27,12 +27,15 @@ from .workflow import (
     optimize_step,
     render_cases,
     run_target_model,
+    score_accuracy,
+    split_train_test,
+    test_step,
     validate_inputs,
 )
 
 app = typer.Typer(
     name="prompt-evolver",
-    help="Prompt optimization CLI for Codex Judge workflows.",
+    help="Prompt optimization CLI for file-based review workflows.",
     no_args_is_help=True,
 )
 config_app = typer.Typer(help="View and modify target model configuration.")
@@ -53,36 +56,36 @@ def _model_config(
     enable_thinking: bool | None,
 ) -> ModelConfig:
     load_dotenv_file()
-    model_name = model or os.environ.get("DSPY_MODEL")
+    model_name = model or os.environ.get("MODEL_NAME")
     if not model_name:
-        missing_keys = ["DSPY_MODEL"]
+        missing_keys = ["MODEL_NAME"]
         if not os.environ.get(api_key_env):
-            missing_keys.append("DSPY_API_KEY")
+            missing_keys.append("MODEL_API_KEY")
         guidance = "\n  ".join(first_use_guidance(missing_keys, Path(".env")))
         raise typer.BadParameter(
-            "model is required via --model or DSPY_MODEL. "
+            "model is required via --model or MODEL_NAME. "
             f"First-time setup:\n  {guidance}"
         )
     try:
         resolved_temperature = (
-            temperature if temperature is not None else env_float("DSPY__TEMPERATURE")
+            temperature if temperature is not None else env_float("MODEL_TEMPERATURE")
         )
-        resolved_max_tokens = max_tokens if max_tokens is not None else env_int("DSPY__MAX_TOKENS")
+        resolved_max_tokens = max_tokens if max_tokens is not None else env_int("MODEL_MAX_TOKENS")
         resolved_timeout_seconds = (
             timeout_seconds
             if timeout_seconds is not None
-            else env_float("DSPY__TIMEOUT_SECONDS")
+            else env_float("MODEL_TIMEOUT_SECONDS")
         )
         resolved_enable_thinking = (
             enable_thinking
             if enable_thinking is not None
-            else env_bool("EVO_EVAL_ENABLE_THINKING")
+            else env_bool("MODEL_ENABLE_THINKING")
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     return ModelConfig(
         model=model_name,
-        api_base=api_base or os.environ.get("DSPY_API_BASE"),
+        api_base=api_base or os.environ.get("MODEL_API_BASE"),
         api_key_env=api_key_env,
         temperature=resolved_temperature,
         max_tokens=resolved_max_tokens,
@@ -163,18 +166,32 @@ def render(
 
 
 @app.command()
+def split(
+    variables_file: Path = typer.Argument(..., exists=True, readable=True),
+    train_out: Path = typer.Option(Path(".prompt-evolver/train.json"), "--train-out"),
+    test_out: Path = typer.Option(Path(".prompt-evolver/test.json"), "--test-out"),
+    train_ratio: float = typer.Option(0.7, "--train-ratio"),
+    seed: int = typer.Option(13, "--seed"),
+) -> None:
+    """Split variables JSON into stratified train and test sets."""
+    train_out.parent.mkdir(parents=True, exist_ok=True)
+    test_out.parent.mkdir(parents=True, exist_ok=True)
+    _echo_json(split_train_test(variables_file, train_out, test_out, train_ratio, seed))
+
+
+@app.command()
 def run(
     rendered_cases: Path = typer.Argument(..., exists=True, readable=True),
     out: Path = typer.Option(Path("target_outputs.jsonl"), "--out", "-o"),
     model: str | None = typer.Option(None, "--model"),
     api_base: str | None = typer.Option(None, "--api-base"),
-    api_key_env: str = typer.Option("DSPY_API_KEY", "--api-key-env"),
+    api_key_env: str = typer.Option("MODEL_API_KEY", "--api-key-env"),
     temperature: float | None = typer.Option(None, "--temperature"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
     timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
     enable_thinking: bool | None = typer.Option(None, "--enable-thinking/--disable-thinking"),
 ) -> None:
-    """Call the target model through DSPy for all rendered cases."""
+    """Call the target model for all rendered cases."""
     records = run_target_model(
         rendered_cases,
         out,
@@ -200,7 +217,7 @@ def judge_pack(
     target_pass_rate: float = typer.Option(1.0, "--target-pass-rate"),
     target_average_score_100: float = typer.Option(90.0, "--target-average-score-100"),
 ) -> None:
-    """Package rendered prompts and target outputs for Codex Judge."""
+    """Package rendered prompts and target outputs for structured review."""
     pack = make_judge_pack(
         rendered_cases,
         target_outputs,
@@ -220,7 +237,7 @@ def ingest_judgement_command(
     target_pass_rate: float = typer.Option(1.0, "--target-pass-rate"),
     target_average_score_100: float = typer.Option(90.0, "--target-average-score-100"),
 ) -> None:
-    """Compute metrics for Codex Judge scores and optionally write enriched judgement JSON."""
+    """Compute metrics for review scores and optionally write enriched judgement JSON."""
     _echo_json(
         ingest_judgement(
             judgement_file,
@@ -230,6 +247,16 @@ def ingest_judgement_command(
             target_average_score_100=target_average_score_100,
         )
     )
+
+
+@app.command("score-accuracy")
+def score_accuracy_command(
+    variables_file: Path = typer.Argument(..., exists=True, readable=True),
+    target_outputs: Path = typer.Argument(..., exists=True, readable=True),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Score target outputs against expected ground truth."""
+    _echo_json(score_accuracy(variables_file, target_outputs, out))
 
 
 @app.command("optimize-step")
@@ -244,7 +271,7 @@ def optimize_step_command(
     candidate_id: str = typer.Option("initial", "--candidate-id"),
     model: str | None = typer.Option(None, "--model"),
     api_base: str | None = typer.Option(None, "--api-base"),
-    api_key_env: str = typer.Option("DSPY_API_KEY", "--api-key-env"),
+    api_key_env: str = typer.Option("MODEL_API_KEY", "--api-key-env"),
     temperature: float | None = typer.Option(None, "--temperature"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
     timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
@@ -252,7 +279,7 @@ def optimize_step_command(
     target_pass_rate: float = typer.Option(1.0, "--target-pass-rate"),
     target_average_score_100: float = typer.Option(90.0, "--target-average-score-100"),
 ) -> None:
-    """Run one target-model step and emit a judge pack for Codex."""
+    """Run one target-model step and emit a judge pack for structured review."""
     _echo_json(
         optimize_step(
             prompt_template,
@@ -274,6 +301,44 @@ def optimize_step_command(
     )
 
 
+@app.command("test-step")
+def test_step_command(
+    prompt_template: Path = typer.Argument(..., exists=True, readable=True),
+    variables_file: Path = typer.Argument(..., exists=True, readable=True),
+    out_dir: Path = typer.Option(
+        Path(".prompt-evolver"),
+        "--out-dir",
+        help="Directory for rendered cases, target outputs, and accuracy report.",
+    ),
+    candidate_id: str = typer.Option("final_test", "--candidate-id"),
+    model: str | None = typer.Option(None, "--model"),
+    api_base: str | None = typer.Option(None, "--api-base"),
+    api_key_env: str = typer.Option("MODEL_API_KEY", "--api-key-env"),
+    temperature: float | None = typer.Option(None, "--temperature"),
+    max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
+    enable_thinking: bool | None = typer.Option(None, "--enable-thinking/--disable-thinking"),
+) -> None:
+    """Run one final test-set target-model step and score accuracy."""
+    _echo_json(
+        test_step(
+            prompt_template,
+            variables_file,
+            out_dir,
+            candidate_id,
+            _model_config(
+                model,
+                api_base,
+                api_key_env,
+                temperature,
+                max_tokens,
+                timeout_seconds,
+                enable_thinking,
+            ),
+        )
+    )
+
+
 @app.command()
 def finalize(
     prompt_template: Path = typer.Argument(..., exists=True, readable=True),
@@ -282,7 +347,7 @@ def finalize(
     target_pass_rate: float = typer.Option(1.0, "--target-pass-rate"),
     target_average_score_100: float = typer.Option(90.0, "--target-average-score-100"),
 ) -> None:
-    """Write final artifacts for the prompt selected by the Codex master agent."""
+    """Write final artifacts for the selected prompt."""
     _echo_json(
         finalize_prompt(
             prompt_template,

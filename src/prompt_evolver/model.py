@@ -11,14 +11,14 @@ from .errors import ModelExecutionError
 class ModelConfig:
     model: str
     api_base: str | None = None
-    api_key_env: str = "DSPY_API_KEY"
+    api_key_env: str = "MODEL_API_KEY"
     temperature: float | None = None
     max_tokens: int | None = None
     timeout_seconds: float | None = None
     enable_thinking: bool | None = None
 
 
-class DspyTargetModel:
+class TargetModelClient:
     def __init__(self, config: ModelConfig):
         self.config = config
         self._lm: Any | None = None
@@ -28,7 +28,7 @@ class DspyTargetModel:
         try:
             result = lm(prompt)
         except Exception as exc:  # pragma: no cover - depends on external model service
-            raise ModelExecutionError(f"DSPy target model call failed: {exc}") from exc
+            raise ModelExecutionError(f"target model call failed: {exc}") from exc
         return _normalize_model_result(result)
 
     def _get_lm(self) -> Any:
@@ -37,7 +37,7 @@ class DspyTargetModel:
         try:
             import dspy  # type: ignore
         except ImportError as exc:  # pragma: no cover - dependency error path
-            raise ModelExecutionError("dspy-ai is required for target model execution") from exc
+            raise ModelExecutionError("target model runtime dependency is not installed") from exc
 
         kwargs: dict[str, Any] = {}
         if self.config.api_base:
@@ -55,13 +55,13 @@ class DspyTargetModel:
             kwargs["extra_body"] = {"enable_thinking": self.config.enable_thinking}
 
         try:
-            self._lm = dspy.LM(dspy_model_name(self.config.model, self.config.api_base), **kwargs)
+            self._lm = dspy.LM(runtime_model_name(self.config.model, self.config.api_base), **kwargs)
         except Exception as exc:  # pragma: no cover - dependency/API compatibility path
-            raise ModelExecutionError(f"failed to initialize dspy.LM: {exc}") from exc
+            raise ModelExecutionError(f"failed to initialize target model runtime: {exc}") from exc
         return self._lm
 
 
-def dspy_model_name(model: str, api_base: str | None = None) -> str:
+def runtime_model_name(model: str, api_base: str | None = None) -> str:
     if "/" in model:
         return model
     if api_base:

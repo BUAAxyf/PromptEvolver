@@ -4,7 +4,7 @@
 
 - 目标：设计一个给 Codex 使用的 prompt 优化工具链，输入 Mustache prompt 模板和 JSON 变量文件，迭代得到更适合目标模型完成任务的优化后 prompt。
 - 重新设计后的核心分工：
-  - **CLI 负责可重复的目标模型执行与评测产物生成**：校验、渲染、DSPy 调用、judge pack、judgement 计分、最终产物写出。
+  - **CLI 负责可重复的目标模型执行与评测产物生成**：校验、渲染、目标模型调用、judge pack、judgement 计分、最终产物写出。
   - **Codex master agent 负责流程编排与 prompt 改写**：收集 subagent 评审，综合优化策略，直接生成下一版 prompt。
   - **Codex subagents 负责多维度评判与 bad case 分析**：给出 0/1 分、百分制分数、失败原因、prompt 逻辑漏洞和规则级优化建议。
 - CLI 不调用 Codex，也不生成新的 prompt。
@@ -31,11 +31,14 @@
 - CLI 是轻量评测执行器，不维护优化工作空间，不管理候选搜索，不改写 prompt。
 - 核心命令：
   - `validate`：校验 prompt 模板、Mustache 变量、JSON 变量文件。
+  - `split`：按 `expected.ground_truth` 默认 70% / 30% 分层划分训练集和测试集。
   - `render`：把 prompt + case variables 渲染为完整任务实例。
   - `run`：用目标模型执行所有 cases，生成模型输出。
   - `judge-pack`：把 case、rendered prompt、target output、rubric 打包成 Codex 可评审文件。
   - `ingest-judgement`：读取 Codex 写回的 judgement JSON，计算通过率与平均分，并可写出 enriched judgement。
+  - `score-accuracy`：按 expected ground truth 对已有目标模型输出做准确率评分。
   - `optimize-step`：执行一轮 `render -> run -> judge-pack`，只生成评测产物。
+  - `test-step`：对 held-out 测试集执行一轮 `render -> run -> score-accuracy`。
   - `finalize`：对 master 已选择的 prompt 写出 `best_prompt.md`、`summary.json`、`run_report.md`。
 - 明确取消：
   - `propose` 命令。
@@ -48,9 +51,9 @@
 - Skill 名称：`prompt-evolver`。
 - Skill 是 CLI 的智能控制层、subagent 调度层和 prompt 改写层。
 - Codex master 工作流：
-  1. 读取用户给定 prompt 和变量 JSON。
-  2. 调用 `prompt-evolver validate`。
-  3. 调用 `prompt-evolver optimize-step` 生成目标模型输出和 judge pack。
+  1. 读取用户给定 prompt 和变量 JSON；如果用户未提供训练/测试集，先调用 `prompt-evolver split` 生成默认划分。
+  2. 调用 `prompt-evolver validate` 校验训练集；最终评估前对测试集只做格式校验，不查看测试内容。
+  3. 调用 `prompt-evolver optimize-step` 在训练集上生成目标模型输出和 judge pack。
   4. 读取 `judge_pack_<candidate_id>.json`。
   5. 读取 `references/judge-subagent-prompt.md`，由 master 拼装完整 subagent 提示词。
   6. 按 case 分片一次性并行启动最大可用数量的 subagents。
@@ -60,6 +63,7 @@
   10. 若未达阈值且预算未耗尽，master 基于当前 prompt 和 subagent 建议直接生成下一版 prompt。
   11. 记录 `.prompt-evolver/optimization_log.jsonl`。
   12. 达标或预算耗尽后调用 `finalize`。
+  13. 最终只对 held-out 测试集调用一次 `test-step`，报告准确率，不再据此改写 prompt。
 - Subagent 必须输出：
   - `binary_score`: 0 或 1。
   - `score_100`: 0-100。
@@ -75,10 +79,12 @@
   - `prompt.md`：Mustache prompt 模板。
   - `task.json`：单文件多样例变量文件。
 - CLI 中间产物：
+  - `train.json` / `test.json`：默认分层划分后的训练集和 held-out 测试集。
   - `rendered_cases_<candidate_id>.jsonl`：每个 case 的完整渲染 prompt。
   - `target_outputs_<candidate_id>.jsonl`：目标模型输出。
   - `judge_pack_<candidate_id>.json`：给 Codex master 和 subagents 的评审材料。
   - `judgement_<candidate_id>.json`：Codex master 聚合后的评分与诊断。
+  - `accuracy_<candidate_id>.json`：held-out 测试集或已有输出的准确率评分报告。
 - Skill/master 产物：
   - `subagent_reviews_<candidate_id>.json`：subagent 原始评审聚合。
   - `optimization_log.jsonl`：每代 prompt、优化建议、评测集结果、优化策略和产物路径。
@@ -93,7 +99,8 @@
 - 已落地首版代码实现，CLI 入口为 `prompt-evolver`。
 - 当前设计中，CLI 不实现 LLM Judge，不调用 Codex，不生成下一版 prompt。
 - Judge 由 Codex subagents 完成，master 通过文件协议聚合 judgement 结果。
-- CLI 使用 DSPy 调用目标模型。
+- CLI 调用目标模型。
 - 变量文件首版使用 JSON，且一个文件包含多个 cases。
+- 默认按 `expected.ground_truth` 分层划分训练/测试集；prompt 迭代只允许使用训练集。
 - 评分同时保留 0/1 和 0-100 两种形式。
 - 优化对象只限 prompt template；CLI 和 Skill 默认都不修改变量文件。
