@@ -1,4 +1,4 @@
-"""Codex Prompt Optimizer package."""
+"""Prompt Evolver package."""
 
 __all__ = ["__version__"]
 

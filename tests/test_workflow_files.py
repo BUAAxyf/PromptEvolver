@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codex_prompt_optimizer.storage import write_jsonl
-from codex_prompt_optimizer.workflow import (
+from prompt_evolver.storage import write_jsonl
+from prompt_evolver.workflow import (
     finalize_prompt,
     ingest_judgement,
     make_judge_pack,
@@ -91,7 +91,7 @@ class WorkflowFileTests(unittest.TestCase):
             summary = finalize_prompt(prompt, judgement, root / "final", target_pass_rate=1.0)
             self.assertEqual(summary["selected_candidate_id"], "initial")
             self.assertTrue((root / "final" / "best_prompt.md").exists())
-            self.assertFalse((root / ".prompt-opt" / "candidates.jsonl").exists())
+            self.assertFalse((root / ".prompt-evolver" / "candidates.jsonl").exists())
 
 
 if __name__ == "__main__":

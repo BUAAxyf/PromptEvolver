@@ -125,16 +125,16 @@ def first_use_guidance(missing_keys: list[str], env_file: Path | str = ".env") -
     env_path = Path(env_file)
     steps: list[str] = []
     if not env_path.exists():
-        steps.append(f"codex-prompt-opt config init --env-file {env_path}")
+        steps.append(f"prompt-evolver config init --env-file {env_path}")
     for key in missing_keys:
         if key == "DSPY_MODEL":
-            steps.append(f"codex-prompt-opt config set DSPY_MODEL <model-name> --env-file {env_path}")
+            steps.append(f"prompt-evolver config set DSPY_MODEL <model-name> --env-file {env_path}")
         elif key == "DSPY_API_BASE":
-            steps.append(f"codex-prompt-opt config set DSPY_API_BASE <api-base-url> --env-file {env_path}")
+            steps.append(f"prompt-evolver config set DSPY_API_BASE <api-base-url> --env-file {env_path}")
         elif key == "DSPY_API_KEY":
-            steps.append(f"codex-prompt-opt config set DSPY_API_KEY <api-key> --env-file {env_path}")
+            steps.append(f"prompt-evolver config set DSPY_API_KEY <api-key> --env-file {env_path}")
     if not steps:
-        steps.append("codex-prompt-opt config show")
+        steps.append("prompt-evolver config show")
     return steps
 
 

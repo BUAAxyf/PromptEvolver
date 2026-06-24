@@ -1,9 +1,9 @@
 ---
-name: codex-prompt-optimizer
-description: Use when Codex needs to optimize a Mustache prompt template with a JSON multi-case variables file by orchestrating the local `codex-prompt-opt` CLI, dispatching parallel judge subagents, aggregating scores and failure analysis, rewriting the prompt template as master agent, and logging every iteration without using Codex as the target model executor.
+name: prompt-evolver
+description: Use when Codex needs to optimize a Mustache prompt template with a JSON multi-case variables file by orchestrating the local `prompt-evolver` CLI, dispatching parallel judge subagents, aggregating scores and failure analysis, rewriting the prompt template as master agent, and logging every iteration without using Codex as the target model executor.
 ---
 
-# Codex Prompt Optimizer
+# Prompt Evolver
 
 ## Role Split
 
@@ -40,7 +40,7 @@ They all refer to the full task produced by rendering the prompt template with o
 Before running target-model evaluation, validate the variables JSON with the bundled deterministic script:
 
 ```bash
-python skills/codex-prompt-optimizer/scripts/validate_input_json.py <task.json> --prompt <prompt.md>
+python skills/prompt-evolver/scripts/validate_input_json.py <task.json> --prompt <prompt.md>
 ```
 
 The script checks the root shape, case-list field, field types, unique case IDs, `globals` merging, inferred variables, and optional Mustache variable coverage. It prints a JSON report and exits non-zero when the input does not match `references/input-json-format.md`.
@@ -66,7 +66,7 @@ Required rules:
 ## Workflow
 
 1. Read the prompt template and variables JSON to understand task intent, expected outputs, and rubric.
-2. Create or append an optimization log at `.prompt-opt/optimization_log.jsonl`. Each iteration must record at least:
+2. Create or append an optimization log at `.prompt-evolver/optimization_log.jsonl`. Each iteration must record at least:
    - `candidate_id`
    - full prompt text or prompt path plus SHA-256
    - optimization strategy used for this generation
@@ -76,33 +76,33 @@ Required rules:
 3. Check target model configuration before calling the target model:
 
    ```bash
-   codex-prompt-opt config show
+   prompt-evolver config show
    ```
 
    If required or recommended values are missing, guide the user to configure them with:
 
    ```bash
-   codex-prompt-opt config init
-   codex-prompt-opt config set DSPY_MODEL <model-name>
-   codex-prompt-opt config set DSPY_API_BASE <api-base-url>
-   codex-prompt-opt config set DSPY_API_KEY <api-key>
-   codex-prompt-opt config set DSPY__TEMPERATURE 0.1
-   codex-prompt-opt config set DSPY__MAX_TOKENS 2048
-   codex-prompt-opt config set DSPY__TIMEOUT_SECONDS 90
-   codex-prompt-opt config set EVO_EVAL_ENABLE_THINKING true
+   prompt-evolver config init
+   prompt-evolver config set DSPY_MODEL <model-name>
+   prompt-evolver config set DSPY_API_BASE <api-base-url>
+   prompt-evolver config set DSPY_API_KEY <api-key>
+   prompt-evolver config set DSPY__TEMPERATURE 0.1
+   prompt-evolver config set DSPY__MAX_TOKENS 2048
+   prompt-evolver config set DSPY__TIMEOUT_SECONDS 90
+   prompt-evolver config set EVO_EVAL_ENABLE_THINKING true
    ```
 
    Do not print real API keys in responses or logs.
 4. Run validation:
 
    ```bash
-   codex-prompt-opt validate <prompt.md> <task.json>
+   prompt-evolver validate <prompt.md> <task.json>
    ```
 
 5. Run one target-model evaluation step:
 
    ```bash
-   codex-prompt-opt optimize-step <prompt.md> <task.json> --out-dir .prompt-opt --candidate-id <candidate_id> --model "$DSPY_MODEL"
+   prompt-evolver optimize-step <prompt.md> <task.json> --out-dir .prompt-evolver --candidate-id <candidate_id> --model "$DSPY_MODEL"
    ```
 
    This command only renders cases, calls the target model, and writes `judge_pack_<candidate_id>.json`. It does not generate the next prompt.
@@ -115,12 +115,12 @@ Required rules:
    - Pass only task description, current prompt template, and the bad cases/cases under review. Do not include local paths, model config, secrets, repository history, previous private analysis, or unrelated files.
    - The subagent prompt must be assembled by the master from `references/judge-subagent-prompt.md`; the subagent must not be asked to inspect links, paths, parent context, or prior messages.
    - Before spawning, check the message text for unresolved placeholders (`<<...>>`) and forbidden context references such as `parent context`, `父线程`, `上文`, `path`, `file`, or local filesystem paths. Fix them before dispatch.
-8. Collect each subagent result, close the agent, parse JSON, and save the raw aggregate to `.prompt-opt/subagent_reviews_<candidate_id>.json`.
-9. Aggregate subagent case scores into `.prompt-opt/judgement_<candidate_id>.json` using the Judgement JSON Contract below.
+8. Collect each subagent result, close the agent, parse JSON, and save the raw aggregate to `.prompt-evolver/subagent_reviews_<candidate_id>.json`.
+9. Aggregate subagent case scores into `.prompt-evolver/judgement_<candidate_id>.json` using the Judgement JSON Contract below.
 10. Ingest judgement metrics:
 
     ```bash
-    codex-prompt-opt ingest-judgement .prompt-opt/judgement_<candidate_id>.json --out-dir .prompt-opt
+    prompt-evolver ingest-judgement .prompt-evolver/judgement_<candidate_id>.json --out-dir .prompt-evolver
     ```
 
 11. If thresholds are not met and budget remains, the master agent creates the next prompt template directly:
@@ -128,12 +128,12 @@ Required rules:
     - Fix rules, decision logic, priority order, output contract, or ambiguity in the existing prompt.
     - Do not add raw bad cases, case IDs, case-specific examples, or a growing failure list to the prompt.
     - Preserve Mustache variables and task intent.
-    - Save the next prompt with a version suffix, for example `.prompt-opt/prompts/<next_candidate_id>.md`.
+    - Save the next prompt with a version suffix, for example `.prompt-evolver/prompts/<next_candidate_id>.md`.
 12. Repeat `optimize-step -> subagent review -> judgement ingest -> master prompt rewrite` until both target pass rate and target average `score_100` are reached, or the iteration/budget limit is exhausted.
 13. Finalize the prompt selected by the master:
 
     ```bash
-    codex-prompt-opt finalize <best_prompt.md> .prompt-opt/judgement_<best_candidate_id>.json --out-dir .prompt-opt/final
+    prompt-evolver finalize <best_prompt.md> .prompt-evolver/judgement_<best_candidate_id>.json --out-dir .prompt-evolver/final
     ```
 
 ## Judgement JSON Contract
@@ -196,18 +196,18 @@ Check:
 
 ## Logging Policy
 
-For every generation, append one JSON object to `.prompt-opt/optimization_log.jsonl` with at least:
+For every generation, append one JSON object to `.prompt-evolver/optimization_log.jsonl` with at least:
 
 ```json
 {
   "schema_version": "1.0",
   "candidate_id": "candidate_001",
   "parent_candidate_id": null,
-  "prompt_path": ".prompt-opt/prompts/candidate_001.md",
+  "prompt_path": ".prompt-evolver/prompts/candidate_001.md",
   "prompt_sha256": "<sha256>",
   "strategy": "Initial evaluation of the baseline prompt.",
-  "subagent_review_path": ".prompt-opt/subagent_reviews_candidate_001.json",
-  "judgement_path": ".prompt-opt/judgement_candidate_001.json",
+  "subagent_review_path": ".prompt-evolver/subagent_reviews_candidate_001.json",
+  "judgement_path": ".prompt-evolver/judgement_candidate_001.json",
   "metrics": {
     "case_count": 0,
     "passed_count": 0,

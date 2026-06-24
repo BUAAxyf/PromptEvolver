@@ -18,7 +18,7 @@ from .config import (
     model_config_status,
     set_model_config_value,
 )
-from .errors import PromptOptimizerError
+from .errors import PromptEvolverError
 from .model import ModelConfig
 from .workflow import (
     finalize_prompt,
@@ -31,7 +31,7 @@ from .workflow import (
 )
 
 app = typer.Typer(
-    name="codex-prompt-opt",
+    name="prompt-evolver",
     help="Prompt optimization CLI for Codex Judge workflows.",
     no_args_is_help=True,
 )
@@ -237,7 +237,7 @@ def optimize_step_command(
     prompt_template: Path = typer.Argument(..., exists=True, readable=True),
     variables_file: Path = typer.Argument(..., exists=True, readable=True),
     out_dir: Path = typer.Option(
-        Path(".prompt-opt"),
+        Path(".prompt-evolver"),
         "--out-dir",
         help="Directory for rendered cases, target outputs, and judge pack.",
     ),
@@ -278,7 +278,7 @@ def optimize_step_command(
 def finalize(
     prompt_template: Path = typer.Argument(..., exists=True, readable=True),
     judgement_file: Path = typer.Argument(..., exists=True, readable=True),
-    out_dir: Path = typer.Option(Path(".prompt-opt/final"), "--out-dir"),
+    out_dir: Path = typer.Option(Path(".prompt-evolver/final"), "--out-dir"),
     target_pass_rate: float = typer.Option(1.0, "--target-pass-rate"),
     target_average_score_100: float = typer.Option(90.0, "--target-average-score-100"),
 ) -> None:
@@ -297,7 +297,7 @@ def finalize(
 def main() -> None:
     try:
         app()
-    except PromptOptimizerError as exc:
+    except PromptEvolverError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 

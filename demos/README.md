@@ -11,5 +11,5 @@
 
 ## 当前方案
 
-- `prompt-optimization-visualization/`：提示词优化路径可视化方案集合。
+- `prompt-evolver-visualization/`：提示词优化路径可视化方案集合。
 

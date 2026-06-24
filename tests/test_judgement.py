@@ -1,6 +1,6 @@
 import unittest
 
-from codex_prompt_optimizer.schemas import compute_metrics, judgement_cases
+from prompt_evolver.schemas import compute_metrics, judgement_cases
 
 
 class JudgementTests(unittest.TestCase):

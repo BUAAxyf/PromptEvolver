@@ -1,6 +1,6 @@
 # Input Variables JSON Format
 
-This reference defines the variables JSON file accepted by `codex-prompt-opt`. The file contains multiple evaluation cases used to render one Mustache prompt template into many task instances.
+This reference defines the variables JSON file accepted by `prompt-evolver`. The file contains multiple evaluation cases used to render one Mustache prompt template into many task instances.
 
 ## Root Format
 
@@ -102,16 +102,16 @@ The prompt template uses Mustache placeholders such as `{{request}}` or `{{user.
 Run deterministic format validation first:
 
 ```bash
-python skills/codex-prompt-optimizer/scripts/validate_input_json.py <task.json> --prompt <prompt.md>
+python skills/prompt-evolver/scripts/validate_input_json.py <task.json> --prompt <prompt.md>
 ```
 
 Run validation before model calls:
 
 ```bash
-codex-prompt-opt validate <prompt.md> <task.json>
+prompt-evolver validate <prompt.md> <task.json>
 ```
 
-If validation reports `missing_variables_by_case`, fix the JSON input or prompt template manually. The optimizer must not silently rewrite the variables file.
+If validation reports `missing_variables_by_case`, fix the JSON input or prompt template manually. The workflow must not silently rewrite the variables file.
 
 ## Minimal Valid Examples
 

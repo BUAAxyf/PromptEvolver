@@ -1,4 +1,4 @@
-# Codex Prompt Optimizer CLI + Skill 重新设计方案
+# Prompt Evolver CLI + Skill 重新设计方案
 
 ## Summary
 
@@ -27,7 +27,7 @@
 
 ## CLI 设计
 
-- CLI 名称：`codex-prompt-opt`。
+- CLI 名称：`prompt-evolver`。
 - CLI 是轻量评测执行器，不维护优化工作空间，不管理候选搜索，不改写 prompt。
 - 核心命令：
   - `validate`：校验 prompt 模板、Mustache 变量、JSON 变量文件。
@@ -41,16 +41,16 @@
   - `propose` 命令。
   - CLI 内部 GEPA-lite prompt 改写。
   - 把失败样例 advice/rationale 追加进 prompt 的机制。
-  - 依赖 `.prompt-opt/candidates.jsonl` 的候选搜索状态。
+  - 依赖 `.prompt-evolver/candidates.jsonl` 的候选搜索状态。
 
 ## Codex Skill 设计
 
-- Skill 名称：`codex-prompt-optimizer`。
+- Skill 名称：`prompt-evolver`。
 - Skill 是 CLI 的智能控制层、subagent 调度层和 prompt 改写层。
 - Codex master 工作流：
   1. 读取用户给定 prompt 和变量 JSON。
-  2. 调用 `codex-prompt-opt validate`。
-  3. 调用 `codex-prompt-opt optimize-step` 生成目标模型输出和 judge pack。
+  2. 调用 `prompt-evolver validate`。
+  3. 调用 `prompt-evolver optimize-step` 生成目标模型输出和 judge pack。
   4. 读取 `judge_pack_<candidate_id>.json`。
   5. 读取 `references/judge-subagent-prompt.md`，由 master 拼装完整 subagent 提示词。
   6. 按 case 分片一次性并行启动最大可用数量的 subagents。
@@ -58,7 +58,7 @@
   8. 收集 subagent 的多维度评分、失败标签、prompt 逻辑漏洞和规则级优化建议。
   9. 聚合为 `judgement_<candidate_id>.json` 并调用 `ingest-judgement`。
   10. 若未达阈值且预算未耗尽，master 基于当前 prompt 和 subagent 建议直接生成下一版 prompt。
-  11. 记录 `.prompt-opt/optimization_log.jsonl`。
+  11. 记录 `.prompt-evolver/optimization_log.jsonl`。
   12. 达标或预算耗尽后调用 `finalize`。
 - Subagent 必须输出：
   - `binary_score`: 0 或 1。
@@ -90,7 +90,7 @@
 
 ## Implementation Notes
 
-- 已落地首版代码实现，CLI 入口为 `codex-prompt-opt`。
+- 已落地首版代码实现，CLI 入口为 `prompt-evolver`。
 - 当前设计中，CLI 不实现 LLM Judge，不调用 Codex，不生成下一版 prompt。
 - Judge 由 Codex subagents 完成，master 通过文件协议聚合 judgement 结果。
 - CLI 使用 DSPy 调用目标模型。

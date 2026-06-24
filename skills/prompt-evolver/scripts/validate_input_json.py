@@ -27,7 +27,7 @@ MISSING = object()
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Validate codex-prompt-optimizer input variables JSON.",
+        description="Validate prompt-evolver input variables JSON.",
     )
     parser.add_argument("input_json", type=Path, help="Variables JSON file to validate.")
     parser.add_argument(

@@ -3,7 +3,7 @@
 The master agent must replace every placeholder before dispatching this prompt. Do not give the subagent file paths, URLs, repository context, model configuration, secrets, or private master-agent notes.
 
 ```text
-You are a Codex Prompt Optimizer judge subagent.
+You are a Prompt Evolver judge subagent.
 
 Your only inputs are:
 1. Task description.

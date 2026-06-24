@@ -3,7 +3,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from codex_prompt_optimizer.cli import app
+from prompt_evolver.cli import app
 
 
 class CliContractTests(unittest.TestCase):
@@ -16,7 +16,7 @@ class CliContractTests(unittest.TestCase):
 
     def test_skill_reference_contains_subagent_guardrails(self):
         root = Path(__file__).resolve().parents[1]
-        prompt = root / "skills/codex-prompt-optimizer/references/judge-subagent-prompt.md"
+        prompt = root / "skills/prompt-evolver/references/judge-subagent-prompt.md"
         text = prompt.read_text(encoding="utf-8")
 
         self.assertIn("不要增加badcase", text)
@@ -25,8 +25,8 @@ class CliContractTests(unittest.TestCase):
 
     def test_skill_reference_documents_input_json_format(self):
         root = Path(__file__).resolve().parents[1]
-        skill = root / "skills/codex-prompt-optimizer/SKILL.md"
-        reference = root / "skills/codex-prompt-optimizer/references/input-json-format.md"
+        skill = root / "skills/prompt-evolver/SKILL.md"
+        reference = root / "skills/prompt-evolver/references/input-json-format.md"
         skill_text = skill.read_text(encoding="utf-8")
         reference_text = reference.read_text(encoding="utf-8")
 

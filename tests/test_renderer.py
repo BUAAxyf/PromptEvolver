@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codex_prompt_optimizer.renderer import extract_mustache_variables, render_template
-from codex_prompt_optimizer.workflow import render_cases, validate_inputs
+from prompt_evolver.renderer import extract_mustache_variables, render_template
+from prompt_evolver.workflow import render_cases, validate_inputs
 
 
 class RendererTests(unittest.TestCase):

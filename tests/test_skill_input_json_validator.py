@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "skills/codex-prompt-optimizer/scripts/validate_input_json.py"
+SCRIPT = ROOT / "skills/prompt-evolver/scripts/validate_input_json.py"
 
 
 class SkillInputJsonValidatorTests(unittest.TestCase):

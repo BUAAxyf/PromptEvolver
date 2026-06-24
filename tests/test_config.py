@@ -4,15 +4,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from codex_prompt_optimizer.cli import _model_config
-from codex_prompt_optimizer.config import (
+from prompt_evolver.cli import _model_config
+from prompt_evolver.config import (
     init_model_config_file,
     model_config_status,
     parse_env_line,
     read_env_file,
     set_model_config_value,
 )
-from codex_prompt_optimizer.model import dspy_model_name
+from prompt_evolver.model import dspy_model_name
 
 
 class ConfigTests(unittest.TestCase):

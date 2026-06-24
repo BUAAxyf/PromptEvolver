@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "codex-prompt-optimizer"
+name = "prompt-evolver"
 version = "0.1.0"
 description = "A Codex-orchestrated prompt optimization CLI using Mustache cases, DSPy target model calls, and file-based judgements."
 readme = "README.md"
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-codex-prompt-opt = "codex_prompt_optimizer.cli:main"
+prompt-evolver = "prompt_evolver.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

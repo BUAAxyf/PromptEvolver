@@ -1,6 +1,6 @@
-# Codex Prompt Optimizer
+# Prompt Evolver
 
-Codex Prompt Optimizer is a local prompt optimization toolkit for a Codex-led workflow. The CLI runs repeatable automation: it validates a Mustache prompt template, renders JSON cases into task instances, calls the target model through DSPy, packages target outputs for Codex Judge review, ingests structured judgements, and writes final artifacts for the prompt selected by Codex.
+Prompt Evolver is a local prompt optimization toolkit for a Codex-led workflow. The CLI runs repeatable automation: it validates a Mustache prompt template, renders JSON cases into task instances, calls the target model through DSPy, packages target outputs for Codex Judge review, ingests structured judgements, and writes final artifacts for the prompt selected by Codex.
 
 Codex is not the target model executor. Codex reads the target model outputs, dispatches Judge subagents for multidimensional scoring and bad-case analysis, writes structured scores and failure analysis, rewrites the prompt template as the master agent, and invokes the CLI for the next evaluation step.
 
@@ -61,25 +61,25 @@ When `DSPY_API_BASE` is set and `DSPY_MODEL` has no provider prefix, the CLI tre
 View current model configuration:
 
 ```bash
-codex-prompt-opt config show
+prompt-evolver config show
 ```
 
 Create a first-use local config file:
 
 ```bash
-codex-prompt-opt config init
+prompt-evolver config init
 ```
 
 Update a model parameter:
 
 ```bash
-codex-prompt-opt config set DSPY_MODEL DeepSeek-V4-Pro
-codex-prompt-opt config set DSPY_API_BASE https://example.com/v1
-codex-prompt-opt config set DSPY_API_KEY sk-...
-codex-prompt-opt config set DSPY__TEMPERATURE 0.1
-codex-prompt-opt config set DSPY__MAX_TOKENS 2048
-codex-prompt-opt config set DSPY__TIMEOUT_SECONDS 90
-codex-prompt-opt config set EVO_EVAL_ENABLE_THINKING true
+prompt-evolver config set DSPY_MODEL DeepSeek-V4-Pro
+prompt-evolver config set DSPY_API_BASE https://example.com/v1
+prompt-evolver config set DSPY_API_KEY sk-...
+prompt-evolver config set DSPY__TEMPERATURE 0.1
+prompt-evolver config set DSPY__MAX_TOKENS 2048
+prompt-evolver config set DSPY__TIMEOUT_SECONDS 90
+prompt-evolver config set EVO_EVAL_ENABLE_THINKING true
 ```
 
 ## Input Format
@@ -121,60 +121,60 @@ The variables file is one JSON file with multiple cases:
 Validate inputs:
 
 ```bash
-codex-prompt-opt validate examples/prompt.md examples/task.json
+prompt-evolver validate examples/prompt.md examples/task.json
 ```
 
 Render task instances:
 
 ```bash
-codex-prompt-opt render examples/prompt.md examples/task.json --out .prompt-opt/rendered_cases.jsonl
+prompt-evolver render examples/prompt.md examples/task.json --out .prompt-evolver/rendered_cases.jsonl
 ```
 
 Run the target model:
 
 ```bash
-codex-prompt-opt run .prompt-opt/rendered_cases.jsonl --out .prompt-opt/target_outputs.jsonl --model "$DSPY_MODEL"
+prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/target_outputs.jsonl --model "$DSPY_MODEL"
 ```
 
 Package materials for Codex Judge:
 
 ```bash
-codex-prompt-opt judge-pack .prompt-opt/rendered_cases.jsonl .prompt-opt/target_outputs.jsonl examples/task.json --out .prompt-opt/judge_pack.json
+prompt-evolver judge-pack .prompt-evolver/rendered_cases.jsonl .prompt-evolver/target_outputs.jsonl examples/task.json --out .prompt-evolver/judge_pack.json
 ```
 
 After Codex writes `judgement.json`, ingest it:
 
 ```bash
-codex-prompt-opt ingest-judgement .prompt-opt/judgement.json --out-dir .prompt-opt
+prompt-evolver ingest-judgement .prompt-evolver/judgement.json --out-dir .prompt-evolver
 ```
 
 Run one automated target-model step and produce a judge pack:
 
 ```bash
-codex-prompt-opt optimize-step examples/prompt.md examples/task.json --out-dir .prompt-opt --candidate-id initial --model "$DSPY_MODEL"
+prompt-evolver optimize-step examples/prompt.md examples/task.json --out-dir .prompt-evolver --candidate-id initial --model "$DSPY_MODEL"
 ```
 
-The CLI does not generate the next prompt. The Codex master agent aggregates subagent suggestions, edits the prompt template directly, records the iteration in `.prompt-opt/optimization_log.jsonl`, and then runs `optimize-step` again with the new prompt.
+The CLI does not generate the next prompt. The Codex master agent aggregates subagent suggestions, edits the prompt template directly, records the iteration in `.prompt-evolver/optimization_log.jsonl`, and then runs `optimize-step` again with the new prompt.
 
 Finalize the prompt selected by Codex:
 
 ```bash
-codex-prompt-opt finalize .prompt-opt/prompts/best.md .prompt-opt/judgement_best.json --out-dir .prompt-opt/final
+prompt-evolver finalize .prompt-evolver/prompts/best.md .prompt-evolver/judgement_best.json --out-dir .prompt-evolver/final
 ```
 
 ## Codex Skill
 
-The Codex Skill lives in `skills/codex-prompt-optimizer`. Use it when Codex should orchestrate this workflow, dispatch parallel Judge subagents, aggregate target-model output scores, write the structured `judgement.json` consumed by the CLI, rewrite the prompt as master agent, and maintain iteration logs.
+The Codex Skill lives in `skills/prompt-evolver`. Use it when Codex should orchestrate this workflow, dispatch parallel Judge subagents, aggregate target-model output scores, write the structured `judgement.json` consumed by the CLI, rewrite the prompt as master agent, and maintain iteration logs.
 
 ## Directory Structure
 
 ```text
-src/codex_prompt_optimizer/     CLI implementation
-tests/                          Unit tests
-examples/                       Minimal prompt and JSON case examples
-examples/prompt_jxb_v*.md       JXB prompt iteration history
-skills/codex-prompt-optimizer/  Codex Skill for this workflow
-PLAN.md                         Original design plan
+src/prompt_evolver/        CLI implementation
+tests/                     Unit tests
+examples/                  Minimal prompt and JSON case examples
+examples/prompt_jxb_v*.md  JXB prompt iteration history
+skills/prompt-evolver/     Codex Skill for this workflow
+PLAN.md                    Original design plan
 ```
 
 ## Development And Testing
