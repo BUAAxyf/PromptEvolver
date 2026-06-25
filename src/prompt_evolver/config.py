@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-MODEL_CONFIG_FIELDS: tuple[str, ...] = (
+TARGET_MODEL_CONFIG_FIELDS: tuple[str, ...] = (
     "MODEL_NAME",
     "MODEL_API_BASE",
     "MODEL_API_KEY",
@@ -14,7 +14,22 @@ MODEL_CONFIG_FIELDS: tuple[str, ...] = (
     "MODEL_ENABLE_THINKING",
 )
 
-SECRET_FIELDS = {"MODEL_API_KEY"}
+EVALUATOR_MODEL_CONFIG_FIELDS: tuple[str, ...] = (
+    "EVALUATOR_MODEL_NAME",
+    "EVALUATOR_MODEL_API_BASE",
+    "EVALUATOR_MODEL_API_KEY",
+    "EVALUATOR_MODEL_TEMPERATURE",
+    "EVALUATOR_MODEL_MAX_TOKENS",
+    "EVALUATOR_MODEL_TIMEOUT_SECONDS",
+    "EVALUATOR_MODEL_ENABLE_THINKING",
+)
+
+MODEL_CONFIG_FIELDS: tuple[str, ...] = (
+    *TARGET_MODEL_CONFIG_FIELDS,
+    *EVALUATOR_MODEL_CONFIG_FIELDS,
+)
+
+SECRET_FIELDS = {"MODEL_API_KEY", "EVALUATOR_MODEL_API_KEY"}
 
 DEFAULT_MODEL_CONFIG: dict[str, str] = {
     "MODEL_NAME": "",
@@ -24,6 +39,13 @@ DEFAULT_MODEL_CONFIG: dict[str, str] = {
     "MODEL_MAX_TOKENS": "2048",
     "MODEL_TIMEOUT_SECONDS": "90",
     "MODEL_ENABLE_THINKING": "true",
+    "EVALUATOR_MODEL_NAME": "",
+    "EVALUATOR_MODEL_API_BASE": "",
+    "EVALUATOR_MODEL_API_KEY": "",
+    "EVALUATOR_MODEL_TEMPERATURE": "",
+    "EVALUATOR_MODEL_MAX_TOKENS": "",
+    "EVALUATOR_MODEL_TIMEOUT_SECONDS": "",
+    "EVALUATOR_MODEL_ENABLE_THINKING": "",
 }
 
 
@@ -100,6 +122,7 @@ def model_config_status(path: Path | str = ".env", reveal_secrets: bool = False)
         key: redact_value(effective_values.get(key, ""), key, reveal_secrets=reveal_secrets)
         for key in MODEL_CONFIG_FIELDS
     }
+    evaluator_fallbacks = evaluator_model_fallbacks(effective_values)
     missing_required = [
         key for key in ("MODEL_NAME",) if not effective_values.get(key)
     ]
@@ -110,6 +133,7 @@ def model_config_status(path: Path | str = ".env", reveal_secrets: bool = False)
         "env_file": str(env_path),
         "env_file_exists": env_path.exists(),
         "values": values,
+        "evaluator_fallbacks": evaluator_fallbacks,
         "missing_required": missing_required,
         "missing_recommended": missing_recommended,
         "next_steps": first_use_guidance(
@@ -121,18 +145,28 @@ def model_config_status(path: Path | str = ".env", reveal_secrets: bool = False)
     }
 
 
+def evaluator_model_fallbacks(effective_values: dict[str, str]) -> dict[str, str]:
+    fallbacks: dict[str, str] = {}
+    for evaluator_key in EVALUATOR_MODEL_CONFIG_FIELDS:
+        suffix = evaluator_key.removeprefix("EVALUATOR_")
+        target_key = suffix
+        if not effective_values.get(evaluator_key) and effective_values.get(target_key):
+            fallbacks[evaluator_key] = target_key
+    return fallbacks
+
+
 def first_use_guidance(missing_keys: list[str], env_file: Path | str = ".env") -> list[str]:
     env_path = Path(env_file)
     steps: list[str] = []
     if not env_path.exists():
         steps.append(f"prompt-evolver config init --env-file {env_path}")
     for key in missing_keys:
-        if key == "MODEL_NAME":
-            steps.append(f"prompt-evolver config set MODEL_NAME <model-name> --env-file {env_path}")
-        elif key == "MODEL_API_BASE":
-            steps.append(f"prompt-evolver config set MODEL_API_BASE <api-base-url> --env-file {env_path}")
-        elif key == "MODEL_API_KEY":
-            steps.append(f"prompt-evolver config set MODEL_API_KEY <api-key> --env-file {env_path}")
+        if key.endswith("_NAME"):
+            steps.append(f"prompt-evolver config set {key} <model-name> --env-file {env_path}")
+        elif key.endswith("_API_BASE"):
+            steps.append(f"prompt-evolver config set {key} <api-base-url> --env-file {env_path}")
+        elif key.endswith("_API_KEY"):
+            steps.append(f"prompt-evolver config set {key} <api-key> --env-file {env_path}")
     if not steps:
         steps.append("prompt-evolver config show")
     return steps
@@ -157,19 +191,19 @@ def validate_model_config_value(key: str, value: str) -> None:
     if key not in MODEL_CONFIG_FIELDS:
         allowed = ", ".join(MODEL_CONFIG_FIELDS)
         raise ValueError(f"unsupported model config key: {key}. Allowed keys: {allowed}")
-    if key == "MODEL_TEMPERATURE":
+    if key.endswith("_TEMPERATURE"):
         parsed = float(value)
         if parsed < 0:
-            raise ValueError("MODEL_TEMPERATURE must be >= 0")
-    elif key == "MODEL_MAX_TOKENS":
+            raise ValueError(f"{key} must be >= 0")
+    elif key.endswith("_MAX_TOKENS"):
         parsed = int(value)
         if parsed <= 0:
-            raise ValueError("MODEL_MAX_TOKENS must be > 0")
-    elif key == "MODEL_TIMEOUT_SECONDS":
+            raise ValueError(f"{key} must be > 0")
+    elif key.endswith("_TIMEOUT_SECONDS"):
         parsed = float(value)
         if parsed <= 0:
-            raise ValueError("MODEL_TIMEOUT_SECONDS must be > 0")
-    elif key == "MODEL_ENABLE_THINKING":
+            raise ValueError(f"{key} must be > 0")
+    elif key.endswith("_ENABLE_THINKING"):
         env_bool_value(value, key)
 
 

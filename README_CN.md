@@ -11,11 +11,12 @@ CLI 负责确定性的文件处理和目标模型执行步骤。Prompt 重写和
 - 使用单个 JSON 文件中的多个评估 case 渲染 Mustache prompt 模板。
 - 将每个渲染后的 prompt 视为一个任务实例，也可以称为 rendered prompt、prompt instantiation 或 evaluation case/example。
 - 将一个变量文件确定性划分为训练集和测试集，默认按 `expected.ground_truth` 分层抽样，比例为 70% / 30%。
-- 在 `run` 和 `optimize-step` 中调用配置好的目标模型。
+- 在 `run`、`optimize-step` 和 `blackbox-eval` 中调用配置好的目标模型。
+- 在 `blackbox-eval` 中调用独立评测器模型，对隐藏测评集评分且不持久化 case 级内容。
 - 通过 JSON 文件交换结构化评审结果，评审流程不耦合进 CLI。
 - prompt 生成不放在 CLI 中；根据评审结论在两轮评估之间编辑 prompt 模板。
 - 只优化 prompt template；CLI 不会重写变量文件，也不会把 bad case 追加到 prompt 中。
-- prompt 迭代只使用训练集，最终通过 `test-step` 对 held-out 测试集做一次准确率评估。
+- badcase 分析只使用训练集，每轮迭代用隐藏测评集聚合分作为黑盒优化信号。
 - prompt 迭代后可用 `prompt-diff` 打开本地左右并列 diff 审阅页面。
 - 支持按阈值和预算停止：目标通过率、目标平均 `score_100`、最大迭代预算。
 
@@ -49,7 +50,7 @@ source venv/bin/activate
 
 ## 配置
 
-CLI 从命令选项或环境变量读取模型配置：
+CLI 从命令选项或环境变量读取目标模型配置：
 
 - `MODEL_NAME`：目标模型标识。
 - `MODEL_API_BASE`：可选 API base URL。
@@ -59,7 +60,17 @@ CLI 从命令选项或环境变量读取模型配置：
 - `MODEL_TIMEOUT_SECONDS`：可选目标模型请求超时时间。
 - `MODEL_ENABLE_THINKING`：可选布尔值，会作为 `extra_body.enable_thinking` 传给兼容的 OpenAI 风格后端。
 
-目标模型执行前，CLI 会自动读取当前工作目录下的 `.env`。本仓库中的 `.env*` 文件只放占位值，真实密钥应保留在本地。
+`blackbox-eval` 还支持独立评测器模型。以下配置留空时会复用对应的 `MODEL_*` 目标模型配置：
+
+- `EVALUATOR_MODEL_NAME`：评测器模型标识。
+- `EVALUATOR_MODEL_API_BASE`：可选评测器 API base URL。
+- `EVALUATOR_MODEL_API_KEY`：可选评测器 API key；留空时复用 `MODEL_API_KEY`。
+- `EVALUATOR_MODEL_TEMPERATURE`：可选评测器 temperature。
+- `EVALUATOR_MODEL_MAX_TOKENS`：可选评测器最大 token 预算。
+- `EVALUATOR_MODEL_TIMEOUT_SECONDS`：可选评测器请求超时时间。
+- `EVALUATOR_MODEL_ENABLE_THINKING`：可选评测器 thinking 开关。
+
+模型执行前，CLI 会自动读取当前工作目录下的 `.env`。本仓库中的 `.env*` 文件只放占位值，真实密钥应保留在本地。
 
 当设置了 `MODEL_API_BASE` 且 `MODEL_NAME` 没有 provider 前缀时，CLI 会把它视为 OpenAI 兼容模型，并在内部使用 `openai/<MODEL_NAME>`。
 
@@ -68,6 +79,8 @@ CLI 从命令选项或环境变量读取模型配置：
 ```bash
 prompt-evolver config show
 ```
+
+输出中的 `evaluator_fallbacks` 会显示哪些留空的 `EVALUATOR_MODEL_*` 字段正在复用 `MODEL_*` 配置。
 
 创建首次使用的本地配置文件：
 
@@ -85,6 +98,11 @@ prompt-evolver config set MODEL_TEMPERATURE 0.1
 prompt-evolver config set MODEL_MAX_TOKENS 2048
 prompt-evolver config set MODEL_TIMEOUT_SECONDS 90
 prompt-evolver config set MODEL_ENABLE_THINKING true
+
+# 可选：只有评测器需要不同于目标模型时才设置。
+prompt-evolver config set EVALUATOR_MODEL_NAME DeepSeek-V4-Pro
+prompt-evolver config set EVALUATOR_MODEL_API_BASE https://example.com/v1
+prompt-evolver config set EVALUATOR_MODEL_API_KEY sk-...
 ```
 
 ## 输入格式
@@ -135,7 +153,7 @@ prompt-evolver split examples/task.example.json --train-out .prompt-evolver/trai
 prompt-evolver validate examples/prompt.example.md .prompt-evolver/train.json
 ```
 
-最终评估前，只允许对测试文件做格式校验；不要用测试 case 或 expected output 参与 prompt 迭代：
+生成的测试文件作为优化过程中的隐藏测评集。可以做格式校验，但不要打开、总结或用其中的 test case 与 expected output 做 badcase 分析：
 
 ```bash
 prompt-evolver validate examples/prompt.example.md .prompt-evolver/test.json
@@ -175,13 +193,21 @@ prompt-evolver optimize-step examples/prompt.example.md .prompt-evolver/train.js
 
 CLI 不生成下一版 prompt。根据评审结论编辑 prompt 模板，在 `.prompt-evolver/optimization_log.jsonl` 中记录迭代，然后用新版 prompt 再次运行 `optimize-step`。
 
+每产生一个候选 prompt 后，用独立评测器给隐藏测评集打聚合分：
+
+```bash
+prompt-evolver blackbox-eval .prompt-evolver/prompts/candidate_001.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id candidate_001
+```
+
+`blackbox-eval` 会在内存中渲染每个隐藏 case，调用目标模型，再让评测器模型对目标输出和 expected ground truth 进行比对，只写出 `blackbox_score_<candidate_id>.json`。它不会持久化 case ID、rendered prompt、target output、judge prompt 或逐 case 分数。
+
 写出选定的最终 prompt：
 
 ```bash
 prompt-evolver finalize .prompt-evolver/prompts/best.md .prompt-evolver/judgement_best.json --out-dir .prompt-evolver/final
 ```
 
-训练达到停止条件或迭代预算耗尽后，对 held-out 测试集只运行一次准确率评估：
+训练达到停止条件或迭代预算耗尽后，如需最终文件型准确率审计，仍可使用 `test-step`：
 
 ```bash
 prompt-evolver test-step .prompt-evolver/final/best_prompt.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id final_test --model "$MODEL_NAME"
@@ -211,9 +237,10 @@ Skill 位于 `skills/prompt-evolver`。它围绕 CLI 提供可重复工作流：
 - 输入校验：`使用 $prompt-evolver 在训练模型调用前校验 examples/prompt.example.md 和 .prompt-evolver/train.json。`
 - 单轮评估：`使用 $prompt-evolver 对 examples/prompt.example.md 和 .prompt-evolver/train.json 运行一轮 optimize-step，并把 judge pack 保存到 .prompt-evolver。`
 - 输出评审：`使用 $prompt-evolver 审阅 judge pack，逐 case 打分，并按约定 schema 写入 judgement JSON。`
+- 隐藏测评：`使用 $prompt-evolver 对当前 prompt 和 .prompt-evolver/test.json 运行 blackbox-eval，并且只把聚合分数作为优化信号。`
 - 改进 prompt：`使用 $prompt-evolver 总结失败 case，更新 prompt 模板，并把本轮迭代记录到 .prompt-evolver/optimization_log.jsonl。`
 - 最终产物：`使用 $prompt-evolver 将选定 prompt 和 judgement 写出到 .prompt-evolver/final。`
-- Held-out 测试：`使用 $prompt-evolver 对 .prompt-evolver/test.json 只运行一次 test-step，并报告 .prompt-evolver/accuracy_final_test.json。`
+- 最终文件审计：`使用 $prompt-evolver 对 .prompt-evolver/test.json 只运行一次 test-step，并报告 .prompt-evolver/accuracy_final_test.json。`
 - Prompt diff 审阅：`运行 prompt-evolver prompt-diff examples/prompt.md output/trace_1782302086/final/best_prompt.md，然后引导用户打开打印出来的 URL 审阅左右并列 prompt diff。`
 
 ## 文档维护

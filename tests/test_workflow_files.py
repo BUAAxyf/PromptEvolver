@@ -2,9 +2,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from prompt_evolver.model import ModelConfig
 from prompt_evolver.storage import write_jsonl
 from prompt_evolver.workflow import (
+    blackbox_evaluate,
     finalize_prompt,
     ingest_judgement,
     make_judge_pack,
@@ -166,6 +169,72 @@ class WorkflowFileTests(unittest.TestCase):
         self.assertEqual(result["case_count"], 2)
         self.assertEqual(result["correct_count"], 1)
         self.assertEqual(result["accuracy"], 0.5)
+
+    def test_blackbox_evaluate_writes_only_aggregate_score(self):
+        class FakeClient:
+            prompts_by_model: dict[str, list[str]] = {}
+
+            def __init__(self, config: ModelConfig):
+                self.config = config
+                self.prompts_by_model.setdefault(config.model, [])
+
+            def generate(self, prompt_text: str) -> str:
+                self.prompts_by_model[self.config.model].append(prompt_text)
+                if self.config.model == "target-model":
+                    return '{"label":"billing"}'
+                return '{"binary_score": 1}'
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            prompt = root / "prompt.md"
+            variables = root / "private_eval.json"
+            out_dir = root / "out"
+            prompt.write_text("Request: {{request}}", encoding="utf-8")
+            variables.write_text(
+                json.dumps(
+                    {
+                        "task": {"rubric": "Return the right label."},
+                        "cases": [
+                            {
+                                "id": "secret_case",
+                                "variables": {"request": "private refund request"},
+                                "expected": {
+                                    "ground_truth": {"label": "billing"},
+                                    "acceptable_outputs": [{"label": "billing"}],
+                                },
+                                "rubric": "Label must be billing.",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch("prompt_evolver.workflow.TargetModelClient", FakeClient):
+                result = blackbox_evaluate(
+                    prompt,
+                    variables,
+                    out_dir,
+                    "candidate_001",
+                    ModelConfig("target-model"),
+                    ModelConfig("judge-model"),
+                )
+
+            files = sorted(path.name for path in out_dir.iterdir())
+            report = json.loads((out_dir / "blackbox_score_candidate_001.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(result["pass_rate"], 1.0)
+        self.assertEqual(files, ["blackbox_score_candidate_001.json"])
+        self.assertEqual(report["passed_count"], 1)
+        self.assertEqual(report["scored_count"], 1)
+        self.assertNotIn("case_scores", report)
+        self.assertNotIn("variables_file", report)
+        self.assertFalse(report["content_redaction"]["case_ids_persisted"])
+        self.assertFalse(report["content_redaction"]["rendered_prompts_persisted"])
+        self.assertFalse(report["content_redaction"]["target_outputs_persisted"])
+        self.assertFalse(report["content_redaction"]["judge_prompts_persisted"])
+        self.assertIn("<expected_ground_truth>", FakeClient.prompts_by_model["judge-model"][0])
+        self.assertIn('"label": "billing"', FakeClient.prompts_by_model["judge-model"][0])
 
 
 if __name__ == "__main__":

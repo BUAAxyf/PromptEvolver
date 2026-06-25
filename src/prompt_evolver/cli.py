@@ -9,9 +9,7 @@ import typer
 
 from .config import (
     MODEL_CONFIG_FIELDS,
-    env_bool,
-    env_float,
-    env_int,
+    env_bool_value,
     first_use_guidance,
     init_model_config_file,
     load_dotenv_file,
@@ -26,6 +24,7 @@ from .prompt_diff_server import (
     open_prompt_diff_browser,
 )
 from .workflow import (
+    blackbox_evaluate,
     finalize_prompt,
     ingest_judgement,
     make_judge_pack,
@@ -43,7 +42,7 @@ app = typer.Typer(
     help="Prompt optimization CLI for file-based review workflows.",
     no_args_is_help=True,
 )
-config_app = typer.Typer(help="View and modify target model configuration.")
+config_app = typer.Typer(help="View and modify target and evaluator model configuration.")
 app.add_typer(config_app, name="config")
 
 
@@ -61,42 +60,124 @@ def _model_config(
     enable_thinking: bool | None,
 ) -> ModelConfig:
     load_dotenv_file()
-    model_name = model or os.environ.get("MODEL_NAME")
+    return _prefixed_model_config(
+        env_prefix="MODEL",
+        model=model,
+        api_base=api_base,
+        api_key_env=api_key_env,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout_seconds=timeout_seconds,
+        enable_thinking=enable_thinking,
+    )
+
+
+def _evaluator_model_config(
+    model: str | None,
+    api_base: str | None,
+    api_key_env: str,
+    temperature: float | None,
+    max_tokens: int | None,
+    timeout_seconds: float | None,
+    enable_thinking: bool | None,
+) -> ModelConfig:
+    load_dotenv_file()
+    return _prefixed_model_config(
+        env_prefix="EVALUATOR_MODEL",
+        model=model,
+        api_base=api_base,
+        api_key_env=api_key_env,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout_seconds=timeout_seconds,
+        enable_thinking=enable_thinking,
+        fallback_env_prefix="MODEL",
+    )
+
+
+def _prefixed_model_config(
+    env_prefix: str,
+    model: str | None,
+    api_base: str | None,
+    api_key_env: str,
+    temperature: float | None,
+    max_tokens: int | None,
+    timeout_seconds: float | None,
+    enable_thinking: bool | None,
+    fallback_env_prefix: str | None = None,
+) -> ModelConfig:
+    def key(suffix: str) -> str:
+        return f"{env_prefix}_{suffix}"
+
+    def fallback_key(suffix: str) -> str | None:
+        return f"{fallback_env_prefix}_{suffix}" if fallback_env_prefix else None
+
+    def env_value(suffix: str) -> str | None:
+        value = os.environ.get(key(suffix))
+        if value not in (None, ""):
+            return value
+        fallback = fallback_key(suffix)
+        return os.environ.get(fallback) if fallback else None
+
+    model_name = model or env_value("NAME")
     if not model_name:
-        missing_keys = ["MODEL_NAME"]
+        missing_keys = [key("NAME")]
         if not os.environ.get(api_key_env):
-            missing_keys.append("MODEL_API_KEY")
+            missing_keys.append(api_key_env)
         guidance = "\n  ".join(first_use_guidance(missing_keys, Path(".env")))
         raise typer.BadParameter(
-            "model is required via --model or MODEL_NAME. "
+            f"model is required via --model or {key('NAME')}. "
             f"First-time setup:\n  {guidance}"
         )
     try:
         resolved_temperature = (
-            temperature if temperature is not None else env_float("MODEL_TEMPERATURE")
+            temperature if temperature is not None else _env_float_value(env_value("TEMPERATURE"))
         )
-        resolved_max_tokens = max_tokens if max_tokens is not None else env_int("MODEL_MAX_TOKENS")
+        resolved_max_tokens = max_tokens if max_tokens is not None else _env_int_value(env_value("MAX_TOKENS"))
         resolved_timeout_seconds = (
             timeout_seconds
             if timeout_seconds is not None
-            else env_float("MODEL_TIMEOUT_SECONDS")
+            else _env_float_value(env_value("TIMEOUT_SECONDS"))
         )
         resolved_enable_thinking = (
             enable_thinking
             if enable_thinking is not None
-            else env_bool("MODEL_ENABLE_THINKING")
+            else _env_bool_value(env_value("ENABLE_THINKING"), key("ENABLE_THINKING"))
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    resolved_api_key_env = api_key_env
+    if not os.environ.get(resolved_api_key_env) and fallback_env_prefix:
+        fallback_api_key = fallback_key("API_KEY")
+        if fallback_api_key and os.environ.get(fallback_api_key):
+            resolved_api_key_env = fallback_api_key
     return ModelConfig(
         model=model_name,
-        api_base=api_base or os.environ.get("MODEL_API_BASE"),
-        api_key_env=api_key_env,
+        api_base=api_base or env_value("API_BASE"),
+        api_key_env=resolved_api_key_env,
         temperature=resolved_temperature,
         max_tokens=resolved_max_tokens,
         timeout_seconds=resolved_timeout_seconds,
         enable_thinking=resolved_enable_thinking,
     )
+
+
+def _env_float_value(value: str | None) -> float | None:
+    if value in (None, ""):
+        return None
+    return float(value)
+
+
+def _env_int_value(value: str | None) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(value)
+
+
+def _env_bool_value(value: str | None, name: str) -> bool | None:
+    if value in (None, ""):
+        return None
+    return env_bool_value(value, name)
 
 
 @config_app.command("show")
@@ -339,6 +420,69 @@ def test_step_command(
                 max_tokens,
                 timeout_seconds,
                 enable_thinking,
+            ),
+        )
+    )
+
+
+@app.command("blackbox-eval")
+def blackbox_eval_command(
+    prompt_template: Path = typer.Argument(..., exists=True, readable=True),
+    variables_file: Path = typer.Argument(..., exists=True, readable=True),
+    out_dir: Path = typer.Option(
+        Path(".prompt-evolver"),
+        "--out-dir",
+        help="Directory for the aggregate black-box score report.",
+    ),
+    candidate_id: str = typer.Option("blackbox_eval", "--candidate-id"),
+    model: str | None = typer.Option(None, "--model", help="Target model override."),
+    api_base: str | None = typer.Option(None, "--api-base"),
+    api_key_env: str = typer.Option("MODEL_API_KEY", "--api-key-env"),
+    temperature: float | None = typer.Option(None, "--temperature"),
+    max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
+    enable_thinking: bool | None = typer.Option(None, "--enable-thinking/--disable-thinking"),
+    evaluator_model: str | None = typer.Option(None, "--evaluator-model"),
+    evaluator_api_base: str | None = typer.Option(None, "--evaluator-api-base"),
+    evaluator_api_key_env: str = typer.Option(
+        "EVALUATOR_MODEL_API_KEY",
+        "--evaluator-api-key-env",
+    ),
+    evaluator_temperature: float | None = typer.Option(None, "--evaluator-temperature"),
+    evaluator_max_tokens: int | None = typer.Option(None, "--evaluator-max-tokens"),
+    evaluator_timeout_seconds: float | None = typer.Option(
+        None,
+        "--evaluator-timeout-seconds",
+    ),
+    evaluator_enable_thinking: bool | None = typer.Option(
+        None,
+        "--evaluator-enable-thinking/--evaluator-disable-thinking",
+    ),
+) -> None:
+    """Run a private black-box evaluation and write only aggregate scores."""
+    _echo_json(
+        blackbox_evaluate(
+            prompt_template,
+            variables_file,
+            out_dir,
+            candidate_id,
+            _model_config(
+                model,
+                api_base,
+                api_key_env,
+                temperature,
+                max_tokens,
+                timeout_seconds,
+                enable_thinking,
+            ),
+            _evaluator_model_config(
+                evaluator_model,
+                evaluator_api_base,
+                evaluator_api_key_env,
+                evaluator_temperature,
+                evaluator_max_tokens,
+                evaluator_timeout_seconds,
+                evaluator_enable_thinking,
             ),
         )
     )

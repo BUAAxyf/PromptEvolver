@@ -17,6 +17,7 @@ class CliContractTests(unittest.TestCase):
         self.assertIn("optimize-step", result.output)
         self.assertIn("split", result.output)
         self.assertIn("test-step", result.output)
+        self.assertIn("blackbox-eval", result.output)
         self.assertIn("score-accuracy", result.output)
         self.assertIn("prompt-diff", result.output)
 
@@ -90,8 +91,9 @@ class CliContractTests(unittest.TestCase):
             "| `variables` | object | No |",
             "Reserved case fields are",
             "Effective render variables are `globals` merged with case variables",
-            "Train/Test Split And Accuracy Fields",
+            "Train/Hidden Evaluation Split And Accuracy Fields",
             "expected.ground_truth",
+            "blackbox-eval",
         ):
             self.assertIn(required_text, reference_text)
 

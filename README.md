@@ -11,11 +11,12 @@ The CLI is responsible for deterministic file and model-execution steps. Prompt 
 - Render a Mustache prompt template with a single JSON file containing multiple evaluation cases.
 - Treat each rendered prompt as a task instance, also called a rendered prompt, prompt instantiation, or evaluation case/example.
 - Split one variables file into deterministic train and test files, stratified by `expected.ground_truth` with a default 70% / 30% ratio.
-- Call the configured target model in `run` and `optimize-step`.
+- Call the configured target model in `run`, `optimize-step`, and `blackbox-eval`.
+- Run an independent evaluator model in `blackbox-eval` to score a private evaluation set without persisting case-level content.
 - Exchange structured judgement results through JSON files instead of coupling review to the CLI.
 - Keep prompt generation outside the CLI; edit the prompt template from review findings between evaluation steps.
 - Optimize only the prompt template; the CLI never rewrites the variables file or appends bad cases to prompts.
-- Keep prompt iteration on the training set and run held-out test accuracy once with `test-step`.
+- Keep bad-case analysis on the training set and use hidden evaluation scores as a black-box optimization signal each iteration.
 - Open a local side-by-side prompt diff review page with `prompt-diff` after prompt iteration.
 - Support stopping by threshold and budget: target pass rate, target average `score_100`, and max iteration budget.
 
@@ -49,7 +50,7 @@ source venv/bin/activate
 
 ## Configuration
 
-The CLI reads model settings from command options or environment variables:
+The CLI reads target model settings from command options or environment variables:
 
 - `MODEL_NAME`: target model identifier.
 - `MODEL_API_BASE`: optional API base URL.
@@ -59,7 +60,17 @@ The CLI reads model settings from command options or environment variables:
 - `MODEL_TIMEOUT_SECONDS`: optional target-model request timeout.
 - `MODEL_ENABLE_THINKING`: optional boolean passed to compatible OpenAI-style backends as `extra_body.enable_thinking`.
 
-The CLI automatically reads `.env` from the current working directory before target model execution. The `.env*` files in this repository contain placeholders only. Keep real secrets local.
+`blackbox-eval` also supports an independent evaluator model. Leave these values blank to reuse the matching `MODEL_*` target-model values:
+
+- `EVALUATOR_MODEL_NAME`: evaluator model identifier.
+- `EVALUATOR_MODEL_API_BASE`: optional evaluator API base URL.
+- `EVALUATOR_MODEL_API_KEY`: optional evaluator API key. Falls back to `MODEL_API_KEY` when blank.
+- `EVALUATOR_MODEL_TEMPERATURE`: optional evaluator temperature.
+- `EVALUATOR_MODEL_MAX_TOKENS`: optional evaluator max token budget.
+- `EVALUATOR_MODEL_TIMEOUT_SECONDS`: optional evaluator request timeout.
+- `EVALUATOR_MODEL_ENABLE_THINKING`: optional evaluator thinking flag.
+
+The CLI automatically reads `.env` from the current working directory before model execution. The `.env*` files in this repository contain placeholders only. Keep real secrets local.
 
 When `MODEL_API_BASE` is set and `MODEL_NAME` has no provider prefix, the CLI treats it as an OpenAI-compatible model and uses `openai/<MODEL_NAME>` internally.
 
@@ -68,6 +79,8 @@ View current model configuration:
 ```bash
 prompt-evolver config show
 ```
+
+The output includes `evaluator_fallbacks` so you can see which blank `EVALUATOR_MODEL_*` fields currently reuse `MODEL_*` values.
 
 Create a first-use local config file:
 
@@ -85,6 +98,11 @@ prompt-evolver config set MODEL_TEMPERATURE 0.1
 prompt-evolver config set MODEL_MAX_TOKENS 2048
 prompt-evolver config set MODEL_TIMEOUT_SECONDS 90
 prompt-evolver config set MODEL_ENABLE_THINKING true
+
+# Optional: set these only when the evaluator should differ from the target model.
+prompt-evolver config set EVALUATOR_MODEL_NAME DeepSeek-V4-Pro
+prompt-evolver config set EVALUATOR_MODEL_API_BASE https://example.com/v1
+prompt-evolver config set EVALUATOR_MODEL_API_KEY sk-...
 ```
 
 ## Input Format
@@ -135,7 +153,7 @@ Validate the checked-in sample prompt against the training set:
 prompt-evolver validate examples/prompt.example.md .prompt-evolver/train.json
 ```
 
-Before final evaluation, the test file may be format-validated, but test cases and expected outputs should not be used for prompt iteration:
+The generated test file is used as a hidden evaluation set during optimization. It may be format-validated, but test cases and expected outputs should not be opened, summarized, or used for bad-case analysis:
 
 ```bash
 prompt-evolver validate examples/prompt.example.md .prompt-evolver/test.json
@@ -175,13 +193,21 @@ The checked-in sample files are `examples/prompt.example.md` and `examples/task.
 
 The CLI does not generate the next prompt. Use review findings to edit the prompt template, record the iteration in `.prompt-evolver/optimization_log.jsonl`, and then run `optimize-step` again with the new prompt.
 
+After each candidate prompt is produced, score the hidden evaluation set with the independent evaluator:
+
+```bash
+prompt-evolver blackbox-eval .prompt-evolver/prompts/candidate_001.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id candidate_001
+```
+
+`blackbox-eval` renders each hidden case in memory, calls the target model, asks the evaluator model to compare the target output with the expected ground truth, and writes only `blackbox_score_<candidate_id>.json`. It does not persist case IDs, rendered prompts, target outputs, judge prompts, or per-case scores.
+
 Finalize the selected prompt:
 
 ```bash
 prompt-evolver finalize .prompt-evolver/prompts/best.md .prompt-evolver/judgement_best.json --out-dir .prompt-evolver/final
 ```
 
-After training reaches the stopping criteria or the iteration budget is exhausted, run held-out test accuracy once:
+After training reaches the stopping criteria or the iteration budget is exhausted, `test-step` is still available for a final file-based accuracy audit:
 
 ```bash
 prompt-evolver test-step .prompt-evolver/final/best_prompt.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id final_test --model "$MODEL_NAME"
@@ -211,9 +237,10 @@ Use these short prompts as starting points:
 - Input validation: `Use $prompt-evolver to validate examples/prompt.example.md against .prompt-evolver/train.json before any training model call.`
 - One evaluation step: `Use $prompt-evolver to run one optimize-step for examples/prompt.example.md and .prompt-evolver/train.json, then save the judge pack under .prompt-evolver.`
 - Review outputs: `Use $prompt-evolver to review the judge pack, score each case, and write judgement JSON in the expected schema.`
+- Hidden evaluation: `Use $prompt-evolver to run blackbox-eval for the current prompt and .prompt-evolver/test.json, then use only the aggregate score as an optimization signal.`
 - Improve the prompt: `Use $prompt-evolver to summarize failing cases, update the prompt template, and record the iteration in .prompt-evolver/optimization_log.jsonl.`
 - Finalize: `Use $prompt-evolver to finalize the selected prompt and judgement into .prompt-evolver/final.`
-- Held-out testing: `Use $prompt-evolver to run test-step once on .prompt-evolver/test.json and report .prompt-evolver/accuracy_final_test.json.`
+- Final file audit: `Use $prompt-evolver to run test-step once on .prompt-evolver/test.json and report .prompt-evolver/accuracy_final_test.json.`
 - Prompt diff review: `Use prompt-evolver prompt-diff examples/prompt.md output/trace_1782302086/final/best_prompt.md, then ask the user to open the printed URL and review the side-by-side prompt diff.`
 
 ## Documentation Maintenance

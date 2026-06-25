@@ -95,7 +95,7 @@ Case validation and normalization rules:
 - Effective render variables are `globals` merged with case variables; case variables win on key conflict.
 - The CLI never modifies the variables JSON during optimization.
 
-## Train/Test Split And Accuracy Fields
+## Train/Hidden Evaluation Split And Accuracy Fields
 
 When the workflow needs train/test files and the user has not provided them, run:
 
@@ -103,13 +103,13 @@ When the workflow needs train/test files and the user has not provided them, run
 prompt-evolver split <task.json> --train-out .prompt-evolver/train.json --test-out .prompt-evolver/test.json
 ```
 
-The split command preserves the root shape and top-level metadata, then writes two variables JSON files. It uses deterministic stratified sampling with default `--train-ratio 0.7` and `--seed 13`. The stratification key is selected in this order:
+The split command preserves the root shape and top-level metadata, then writes two variables JSON files. Treat the train output as the training set for bad-case analysis and the test output as the hidden evaluation set for `blackbox-eval`. It uses deterministic stratified sampling with default `--train-ratio 0.7` and `--seed 13`. The stratification key is selected in this order:
 
 1. `expected.ground_truth`
 2. `expected.primary`
 3. The complete `expected` value
 
-For held-out accuracy scoring, prefer this `expected` shape when possible:
+For hidden evaluation and file-based accuracy scoring, prefer this `expected` shape when possible:
 
 ```json
 {
@@ -126,7 +126,7 @@ For held-out accuracy scoring, prefer this `expected` shape when possible:
 }
 ```
 
-`prompt-evolver score-accuracy` and `prompt-evolver test-step` score each target output with this priority:
+`prompt-evolver blackbox-eval` passes the expected value to the evaluator model and highlights `expected.ground_truth` when present. `prompt-evolver score-accuracy` and `prompt-evolver test-step` score each target output with this priority:
 
 - `expected.acceptable_outputs`, when it is a non-empty array.
 - `expected.primary`, when present.
@@ -135,7 +135,7 @@ For held-out accuracy scoring, prefer this `expected` shape when possible:
 
 For object expected values, the expected object only needs to be a subset of the target output object, so extra model fields are allowed. `ground_truth` may also be a string containing JSON alternatives separated by ` or `, for example `{"label":"billing"} or {"label":"refund"}`.
 
-The training phase must use only the training JSON. Before final evaluation, the test JSON may be format-validated, but test case content and expected answers must not be used for prompt iteration.
+Training bad-case analysis must use only the training JSON. During black-box optimization, the hidden evaluation JSON may feed `prompt-evolver blackbox-eval`, but its case content, expected answers, rendered prompts, target outputs, judge prompts, and per-case scores must not be opened or used for prompt rewriting. Only aggregate black-box metrics may guide candidate selection.
 
 ## Prompt Variable Requirements
 

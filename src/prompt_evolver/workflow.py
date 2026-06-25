@@ -237,6 +237,136 @@ def test_step(
     }
 
 
+def blackbox_evaluate(
+    prompt_template: Path,
+    variables_file: Path,
+    out_dir: Path,
+    candidate_id: str,
+    target_model_config: ModelConfig,
+    evaluator_model_config: ModelConfig,
+) -> dict[str, Any]:
+    """Run a private evaluation set and persist only aggregate scores."""
+    validation = validate_inputs(prompt_template, variables_file)
+    if not validation["valid"]:
+        raise ValidationError(
+            "black-box evaluation input has missing template variables; "
+            "details are redacted to avoid exposing private evaluation cases"
+        )
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    template = prompt_template.read_text(encoding="utf-8")
+    bundle = normalize_variables_file(variables_file)
+    target_client = TargetModelClient(target_model_config)
+    evaluator_client = TargetModelClient(evaluator_model_config)
+
+    passed_count = 0
+    evaluator_parse_error_count = 0
+    invalid_score_count = 0
+    for case in bundle.cases:
+        rendered = render_template(template, case.variables)
+        target_output = target_client.generate(rendered)
+        judge_prompt = build_blackbox_judge_prompt(
+            task=bundle.task,
+            expected=case.expected,
+            rubric=case.rubric,
+            target_output=target_output,
+        )
+        evaluator_output = evaluator_client.generate(judge_prompt)
+        parsed, parse_error = _parse_json_output(evaluator_output)
+        if parse_error is not None or not isinstance(parsed, dict):
+            evaluator_parse_error_count += 1
+            continue
+        binary_score = parsed.get("binary_score")
+        if binary_score not in (0, 1):
+            invalid_score_count += 1
+            continue
+        if binary_score == 1:
+            passed_count += 1
+
+    case_count = len(bundle.cases)
+    scored_count = case_count - evaluator_parse_error_count - invalid_score_count
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "candidate_id": candidate_id,
+        "prompt_template": str(prompt_template),
+        "prompt_template_sha256": sha256_text(template),
+        "case_count": case_count,
+        "scored_count": scored_count,
+        "passed_count": passed_count,
+        "pass_rate": passed_count / scored_count if scored_count else 0.0,
+        "evaluator_parse_error_count": evaluator_parse_error_count,
+        "invalid_score_count": invalid_score_count,
+        "target_model": target_model_config.model,
+        "evaluator_model": evaluator_model_config.model,
+        "created_at": utc_now_iso(),
+        "content_redaction": {
+            "case_level_outputs_persisted": False,
+            "case_ids_persisted": False,
+            "variables_file_persisted": False,
+            "rendered_prompts_persisted": False,
+            "target_outputs_persisted": False,
+            "judge_prompts_persisted": False,
+        },
+    }
+    score_path = out_dir / f"blackbox_score_{candidate_id}.json"
+    write_json(score_path, report)
+    return {**report, "score_report": str(score_path)}
+
+
+def build_blackbox_judge_prompt(
+    task: dict[str, Any],
+    expected: Any,
+    rubric: Any,
+    target_output: str,
+) -> str:
+    ground_truth = _ground_truth_for_judge(expected)
+    return "\n".join(
+        [
+            "You are an independent black-box prompt evaluation judge.",
+            "",
+            "Judge whether the target output satisfies the expected ground truth and scoring contract.",
+            "Use the task metadata and rubric only as supporting criteria.",
+            "Do not reveal or summarize any case content.",
+            "Return ONLY valid JSON with this exact shape:",
+            '{"binary_score": 0}',
+            "",
+            "Scoring rule:",
+            "- binary_score must be 1 when the target output satisfies the expected value.",
+            "- binary_score must be 0 otherwise.",
+            "- Do not include rationale, labels, expected values, target output, or case details.",
+            "",
+            "<task_metadata>",
+            json.dumps(task, ensure_ascii=False, sort_keys=True),
+            "</task_metadata>",
+            "",
+            "<expected_ground_truth>",
+            json.dumps(ground_truth, ensure_ascii=False, sort_keys=True),
+            "</expected_ground_truth>",
+            "",
+            "<expected_scoring_contract>",
+            json.dumps(expected, ensure_ascii=False, sort_keys=True),
+            "</expected_scoring_contract>",
+            "",
+            "<rubric>",
+            json.dumps(rubric, ensure_ascii=False, sort_keys=True),
+            "</rubric>",
+            "",
+            "<target_output>",
+            target_output,
+            "</target_output>",
+        ]
+    )
+
+
+def _ground_truth_for_judge(expected: Any) -> Any:
+    if isinstance(expected, dict):
+        if "ground_truth" in expected:
+            return expected["ground_truth"]
+        if "primary" in expected:
+            return expected["primary"]
+    return expected
+
+
 def make_judge_pack(
     rendered_cases: Path,
     target_outputs: Path,
