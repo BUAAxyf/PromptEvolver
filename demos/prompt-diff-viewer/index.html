@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prompt Diff Viewer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #e9edf1;
+      --chrome: #f8fafb;
+      --panel: #ffffff;
+      --ink: #1c2228;
+      --muted: #697681;
+      --line: #cfd7df;
+      --blue: #285f8f;
+      --green: #1e7a43;
+      --green-bg: #e5f5e9;
+      --red: #aa3f3c;
+      --red-bg: #f9e5e3;
+      --amber: #9a6a18;
+      --amber-bg: #fff3cf;
+      --violet: #5f4b8b;
+      --code: #111820;
+      --gutter: #f1f4f6;
+      --shadow: 0 18px 46px rgba(42, 53, 66, 0.14);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(55, 70, 84, .05) 1px, transparent 1px) 0 0 / 32px 32px,
+        linear-gradient(rgba(55, 70, 84, .045) 1px, transparent 1px) 0 0 / 32px 32px,
+        var(--bg);
+      font-family: "Avenir Next", "Helvetica Neue", sans-serif;
+    }
+
+    .shell {
+      width: min(1520px, calc(100vw - 34px));
+      margin: 0 auto;
+      padding: 28px 0 36px;
+    }
+
+    .topbar {
+      min-height: 66px;
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+      padding: 14px 18px;
+      background: var(--chrome);
+      border: 1px solid var(--line);
+      border-radius: 8px 8px 0 0;
+      box-shadow: var(--shadow);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 23px;
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill,
+    .button,
+    .file-label {
+      min-height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 5px 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .button,
+    .file-label {
+      color: #fff;
+      background: var(--blue);
+      border-color: var(--blue);
+      cursor: pointer;
+    }
+
+    .button.secondary {
+      color: var(--blue);
+      background: #fff;
+    }
+
+    input[type="file"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .dot.add { background: var(--green); }
+    .dot.del { background: var(--red); }
+    .dot.mod { background: var(--amber); }
+
+    .workbench {
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      min-height: 760px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-top: 0;
+      border-radius: 0 0 8px 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: #f4f6f8;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      min-width: 0;
+    }
+
+    .sidebar-head,
+    .source-card,
+    .summary {
+      padding: 15px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .branch {
+      display: grid;
+      gap: 5px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .branch strong {
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .source-card {
+      display: grid;
+      gap: 10px;
+      background: #f9fbfc;
+    }
+
+    .source-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-weight: 900;
+      font-size: 13px;
+    }
+
+    .file-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .file-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 11px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 128px;
+      resize: vertical;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--code);
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.48;
+    }
+
+    .summary {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      overflow: auto;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      min-height: 62px;
+      display: grid;
+      align-content: center;
+      gap: 3px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .metric b {
+      color: var(--ink);
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 18px;
+    }
+
+    .main {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      background: #fbfcfd;
+    }
+
+    .pathbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      min-height: 54px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .path {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .mini-map {
+      width: 180px;
+      height: 18px;
+      display: grid;
+      grid-template-columns: repeat(18, 1fr);
+      gap: 2px;
+    }
+
+    .mini-map span {
+      border-radius: 2px;
+      background: #d9e0e6;
+    }
+
+    .mini-map .add { background: var(--green); }
+    .mini-map .del { background: var(--red); }
+    .mini-map .mod { background: var(--amber); }
+
+    .diff-wrap {
+      min-width: 0;
+      overflow-x: auto;
+      padding: 14px;
+    }
+
+    .diff-stage {
+      min-width: 980px;
+      height: 660px;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr);
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .pane {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 40px minmax(0, 1fr);
+      background: #fff;
+    }
+
+    .pane-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      background: #eef2f5;
+      font-size: 12px;
+      font-weight: 900;
+      color: #34414d;
+    }
+
+    .revision {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .scroll-pane {
+      min-height: 0;
+      overflow: auto;
+      overscroll-behavior: contain;
+    }
+
+    .center-gutter {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 40px 1fr;
+      background: #edf1f4;
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+    }
+
+    .gutter-head {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .connectors {
+      position: relative;
+      min-height: 100%;
+      overflow: hidden;
+    }
+
+    .connector {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      border-radius: 4px;
+      opacity: .9;
+      transform: translateY(var(--scroll-offset, 0px));
+    }
+
+    .connector.add { background: rgba(30, 122, 67, .22); }
+    .connector.del { background: rgba(170, 63, 60, .22); }
+    .connector.mod { background: rgba(154, 106, 24, .25); }
+
+    .code {
+      min-width: 100%;
+      width: max-content;
+      border-collapse: collapse;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.46;
+      color: var(--code);
+    }
+
+    .code td {
+      height: 29px;
+      padding: 0;
+      vertical-align: middle;
+      white-space: pre;
+    }
+
+    .ln {
+      width: 50px;
+      min-width: 50px;
+      padding: 0 8px !important;
+      text-align: right;
+      color: #82909d;
+      background: var(--gutter);
+      border-right: 1px solid #dfe5ea;
+      user-select: none;
+    }
+
+    .mark {
+      width: 26px;
+      min-width: 26px;
+      text-align: center;
+      color: #7a8792;
+      background: #f6f8fa;
+      font-weight: 900;
+      user-select: none;
+    }
+
+    .txt {
+      min-width: 620px;
+      padding: 0 12px !important;
+      border-left: 4px solid transparent;
+    }
+
+    tr.add .txt,
+    tr.add .mark,
+    tr.add .ln { background: var(--green-bg); }
+
+    tr.add .txt {
+      border-color: var(--green);
+      box-shadow: inset 0 0 0 1px rgba(30, 122, 67, .18);
+    }
+
+    tr.del .txt,
+    tr.del .mark,
+    tr.del .ln { background: var(--red-bg); }
+
+    tr.del .txt {
+      border-color: var(--red);
+      box-shadow: inset 0 0 0 1px rgba(170, 63, 60, .18);
+    }
+
+    tr.mod .txt,
+    tr.mod .mark,
+    tr.mod .ln { background: var(--amber-bg); }
+
+    tr.mod .txt {
+      border-color: var(--amber);
+      box-shadow: inset 0 0 0 1px rgba(154, 106, 24, .22);
+    }
+
+    tr.blank .txt,
+    tr.blank .mark,
+    tr.blank .ln {
+      background: #f8fafb;
+      color: #adb7c1;
+    }
+
+    .word-add,
+    .word-del,
+    .word-mod {
+      padding: 1px 3px;
+      border-radius: 4px;
+      font-weight: 800;
+    }
+
+    .word-add { background: rgba(30, 122, 67, .2); color: var(--green); }
+    .word-del { background: rgba(170, 63, 60, .18); color: var(--red); text-decoration: line-through; }
+    .word-mod { background: rgba(154, 106, 24, .24); color: #744e0f; }
+
+    .hunk-label td {
+      height: 34px;
+      background: #dbe8f2;
+      color: #36556e;
+      font-weight: 800;
+    }
+
+    .hunk-label .txt {
+      border-left-color: var(--blue);
+    }
+
+    @media (max-width: 1060px) {
+      .topbar,
+      .workbench {
+        grid-template-columns: 1fr;
+      }
+
+      .toolbar {
+        justify-content: flex-start;
+      }
+
+      .sidebar {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .summary {
+        max-height: 260px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>Prompt Diff Viewer</h1>
+        <div class="subtitle" id="subtitle">本地 Markdown prompt 对比工具，支持文件导入和复制粘贴。</div>
+      </div>
+      <nav class="toolbar" aria-label="diff legend">
+        <span class="pill"><span class="dot add"></span>新增</span>
+        <span class="pill"><span class="dot del"></span>删除</span>
+        <span class="pill"><span class="dot mod"></span>修改</span>
+        <button class="button secondary" id="swapButton" type="button">交换两侧</button>
+        <button class="button" id="compareButton" type="button">重新对比</button>
+      </nav>
+    </header>
+
+    <section class="workbench" aria-label="prompt diff workbench">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <div class="branch">
+            <span>CLI 默认会加载输入 prompt 与输出 prompt</span>
+            <strong>prompt-evolver prompt-diff &lt;old.md&gt; &lt;new.md&gt;</strong>
+          </div>
+        </div>
+
+        <section class="source-card" aria-label="original prompt input">
+          <div class="source-title">
+            <span>原版 Prompt</span>
+            <label class="file-label">导入 Markdown<input id="oldFile" type="file" accept=".md,.markdown,text/markdown,text/plain" /></label>
+          </div>
+          <div class="file-row">
+            <span class="file-name" id="oldName">等待加载</span>
+          </div>
+          <textarea id="oldText" spellcheck="false" placeholder="粘贴原版 prompt Markdown，或从本地选择 .md 文件"></textarea>
+        </section>
+
+        <section class="source-card" aria-label="revised prompt input">
+          <div class="source-title">
+            <span>新版 Prompt</span>
+            <label class="file-label">导入 Markdown<input id="newFile" type="file" accept=".md,.markdown,text/markdown,text/plain" /></label>
+          </div>
+          <div class="file-row">
+            <span class="file-name" id="newName">等待加载</span>
+          </div>
+          <textarea id="newText" spellcheck="false" placeholder="粘贴新版 prompt Markdown，或从本地选择 .md 文件"></textarea>
+        </section>
+
+        <section class="summary" aria-label="diff summary">
+          <div class="metric-grid">
+            <div class="metric"><b id="addCount">0</b>新增行</div>
+            <div class="metric"><b id="delCount">0</b>删除行</div>
+            <div class="metric"><b id="modCount">0</b>修改行</div>
+            <div class="metric"><b id="sameCount">0</b>相同行</div>
+          </div>
+          <button class="button secondary" id="resetButton" type="button">恢复 CLI 默认输入</button>
+        </section>
+      </aside>
+
+      <section class="main">
+        <div class="pathbar">
+          <div class="path" id="pathLabel">prompt.md -> best_prompt.md</div>
+          <div class="mini-map" id="miniMap" aria-hidden="true"></div>
+        </div>
+
+        <div class="diff-wrap">
+          <div class="diff-stage">
+            <section class="pane" aria-label="left revision">
+              <div class="pane-title">
+                <span>Before</span>
+                <span class="revision" id="leftRevision">original prompt</span>
+              </div>
+              <div class="scroll-pane" id="leftPane">
+                <table class="code" aria-label="before markdown"><tbody id="leftCode"></tbody></table>
+              </div>
+            </section>
+
+            <div class="center-gutter" aria-hidden="true">
+              <div class="gutter-head"></div>
+              <div class="connectors" id="connectors"></div>
+            </div>
+
+            <section class="pane" aria-label="right revision">
+              <div class="pane-title">
+                <span>After</span>
+                <span class="revision" id="rightRevision">revised prompt</span>
+              </div>
+              <div class="scroll-pane" id="rightPane">
+                <table class="code" aria-label="after markdown"><tbody id="rightCode"></tbody></table>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const fallbackPayload = {
+      original: {
+        name: "examples/prompt.md",
+        path: "examples/prompt.md",
+        text: "# Original Prompt\\n\\nPaste or import a Markdown prompt on the left."
+      },
+      revised: {
+        name: "best_prompt.md",
+        path: "output/trace_*/final/best_prompt.md",
+        text: "# Revised Prompt\\n\\nPaste or import a Markdown prompt on the right."
+      }
+    };
+
+    const state = {
+      defaults: fallbackPayload,
+      oldName: fallbackPayload.original.name,
+      newName: fallbackPayload.revised.name
+    };
+
+    const els = {
+      subtitle: document.getElementById("subtitle"),
+      oldFile: document.getElementById("oldFile"),
+      newFile: document.getElementById("newFile"),
+      oldName: document.getElementById("oldName"),
+      newName: document.getElementById("newName"),
+      oldText: document.getElementById("oldText"),
+      newText: document.getElementById("newText"),
+      compareButton: document.getElementById("compareButton"),
+      swapButton: document.getElementById("swapButton"),
+      resetButton: document.getElementById("resetButton"),
+      pathLabel: document.getElementById("pathLabel"),
+      leftRevision: document.getElementById("leftRevision"),
+      rightRevision: document.getElementById("rightRevision"),
+      leftPane: document.getElementById("leftPane"),
+      rightPane: document.getElementById("rightPane"),
+      leftCode: document.getElementById("leftCode"),
+      rightCode: document.getElementById("rightCode"),
+      connectors: document.getElementById("connectors"),
+      miniMap: document.getElementById("miniMap"),
+      addCount: document.getElementById("addCount"),
+      delCount: document.getElementById("delCount"),
+      modCount: document.getElementById("modCount"),
+      sameCount: document.getElementById("sameCount")
+    };
+
+    let syncing = false;
+
+    async function loadDefaults() {
+      try {
+        const response = await fetch("/api/prompts", { cache: "no-store" });
+        if (response.ok) {
+          state.defaults = await response.json();
+        }
+      } catch (error) {
+        state.defaults = fallbackPayload;
+      }
+      resetToDefaults();
+    }
+
+    function resetToDefaults() {
+      state.oldName = state.defaults.original.name || "original.md";
+      state.newName = state.defaults.revised.name || "revised.md";
+      els.oldText.value = state.defaults.original.text || "";
+      els.newText.value = state.defaults.revised.text || "";
+      render();
+    }
+
+    function render() {
+      const oldText = els.oldText.value;
+      const newText = els.newText.value;
+      els.oldName.textContent = state.oldName;
+      els.newName.textContent = state.newName;
+      els.leftRevision.textContent = state.oldName;
+      els.rightRevision.textContent = state.newName;
+      els.pathLabel.textContent = `${state.oldName} -> ${state.newName}`;
+      els.subtitle.textContent = `${lineCount(oldText)} lines -> ${lineCount(newText)} lines`;
+
+      const rows = buildRows(oldText, newText);
+      els.leftCode.innerHTML = rows.map(row => rowHtml(row, "left")).join("");
+      els.rightCode.innerHTML = rows.map(row => rowHtml(row, "right")).join("");
+      els.leftPane.scrollTop = 0;
+      els.rightPane.scrollTop = 0;
+      els.connectors.style.setProperty("--scroll-offset", "0px");
+      renderConnectors(rows);
+      renderMiniMap(rows);
+      renderStats(rows);
+    }
+
+    function lineCount(text) {
+      if (!text) return 0;
+      return text.split(/\r?\n/).length;
+    }
+
+    function buildRows(oldText, newText) {
+      const leftLines = splitLines(oldText);
+      const rightLines = splitLines(newText);
+      const ops = diffLines(leftLines, rightLines);
+      const rows = [{
+        kind: "hunk",
+        label: `@@ -1,${leftLines.length} +1,${rightLines.length} @@`
+      }];
+      let leftNo = 1;
+      let rightNo = 1;
+      for (let i = 0; i < ops.length; i += 1) {
+        const op = ops[i];
+        if (op.kind === "same") {
+          rows.push({ kind: "context", leftNo, rightNo, left: escapeHtml(op.text), right: escapeHtml(op.text) });
+          leftNo += 1;
+          rightNo += 1;
+          continue;
+        }
+        const deletes = [];
+        const adds = [];
+        while (i < ops.length && ops[i].kind !== "same") {
+          if (ops[i].kind === "del") deletes.push(ops[i].text);
+          if (ops[i].kind === "add") adds.push(ops[i].text);
+          i += 1;
+        }
+        i -= 1;
+        const paired = Math.max(deletes.length, adds.length);
+        for (let index = 0; index < paired; index += 1) {
+          const oldLine = deletes[index];
+          const newLine = adds[index];
+          if (oldLine !== undefined && newLine !== undefined) {
+            const highlighted = highlightWords(oldLine, newLine);
+            rows.push({ kind: "mod", leftNo, rightNo, left: highlighted.left, right: highlighted.right });
+            leftNo += 1;
+            rightNo += 1;
+          } else if (oldLine !== undefined) {
+            rows.push({ kind: "del", leftNo, rightNo: null, left: escapeHtml(oldLine), right: "" });
+            leftNo += 1;
+          } else {
+            rows.push({ kind: "add", leftNo: null, rightNo, left: "", right: escapeHtml(newLine) });
+            rightNo += 1;
+          }
+        }
+      }
+      return rows;
+    }
+
+    function splitLines(text) {
+      if (text === "") return [];
+      return text.replace(/\r\n/g, "\n").split("\n");
+    }
+
+    function diffLines(left, right) {
+      const rows = left.length;
+      const cols = right.length;
+      const dp = Array.from({ length: rows + 1 }, () => Array(cols + 1).fill(0));
+      for (let i = rows - 1; i >= 0; i -= 1) {
+        for (let j = cols - 1; j >= 0; j -= 1) {
+          dp[i][j] = left[i] === right[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+      }
+      const ops = [];
+      let i = 0;
+      let j = 0;
+      while (i < rows && j < cols) {
+        if (left[i] === right[j]) {
+          ops.push({ kind: "same", text: left[i] });
+          i += 1;
+          j += 1;
+        } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+          ops.push({ kind: "del", text: left[i] });
+          i += 1;
+        } else {
+          ops.push({ kind: "add", text: right[j] });
+          j += 1;
+        }
+      }
+      while (i < rows) {
+        ops.push({ kind: "del", text: left[i] });
+        i += 1;
+      }
+      while (j < cols) {
+        ops.push({ kind: "add", text: right[j] });
+        j += 1;
+      }
+      return ops;
+    }
+
+    function highlightWords(left, right) {
+      let prefix = 0;
+      while (prefix < left.length && prefix < right.length && left[prefix] === right[prefix]) {
+        prefix += 1;
+      }
+      let suffix = 0;
+      while (
+        suffix + prefix < left.length &&
+        suffix + prefix < right.length &&
+        left[left.length - 1 - suffix] === right[right.length - 1 - suffix]
+      ) {
+        suffix += 1;
+      }
+      const leftMid = left.slice(prefix, left.length - suffix);
+      const rightMid = right.slice(prefix, right.length - suffix);
+      const commonPrefix = escapeHtml(left.slice(0, prefix));
+      const commonSuffix = escapeHtml(left.slice(left.length - suffix));
+      return {
+        left: `${commonPrefix}<span class="word-del">${escapeHtml(leftMid)}</span>${commonSuffix}`,
+        right: `${commonPrefix}<span class="word-add">${escapeHtml(rightMid)}</span>${commonSuffix}`
+      };
+    }
+
+    function rowHtml(row, side) {
+      if (row.kind === "hunk") {
+        return `<tr class="hunk-label"><td class="ln"></td><td class="mark">@@</td><td class="txt">${row.label}</td></tr>`;
+      }
+      const isLeft = side === "left";
+      const lineNo = isLeft ? row.leftNo : row.rightNo;
+      const text = isLeft ? row.left : row.right;
+      const blank = text === "";
+      const mark = row.kind === "add" ? "+" : row.kind === "del" ? "-" : row.kind === "mod" ? "~" : "";
+      let cls = row.kind;
+      if ((row.kind === "add" && isLeft) || (row.kind === "del" && !isLeft) || blank) {
+        cls = "blank";
+      }
+      return `<tr class="${cls}"><td class="ln">${lineNo ?? ""}</td><td class="mark">${blank ? "" : mark}</td><td class="txt">${text}</td></tr>`;
+    }
+
+    function renderConnectors(rows) {
+      els.connectors.innerHTML = "";
+      const rowHeight = 29;
+      rows.forEach((row, index) => {
+        if (!["add", "del", "mod"].includes(row.kind)) return;
+        const item = document.createElement("span");
+        item.className = `connector ${row.kind}`;
+        item.style.top = `${index * rowHeight}px`;
+        item.style.height = `${Math.max(18, rowHeight - 7)}px`;
+        els.connectors.appendChild(item);
+      });
+    }
+
+    function renderMiniMap(rows) {
+      const changed = rows.filter(row => ["add", "del", "mod"].includes(row.kind));
+      const slices = 18;
+      els.miniMap.innerHTML = "";
+      for (let i = 0; i < slices; i += 1) {
+        const span = document.createElement("span");
+        const row = changed[Math.floor((i / Math.max(1, slices - 1)) * Math.max(0, changed.length - 1))];
+        if (row) span.className = row.kind;
+        els.miniMap.appendChild(span);
+      }
+    }
+
+    function renderStats(rows) {
+      const add = rows.filter(row => row.kind === "add").length;
+      const del = rows.filter(row => row.kind === "del").length;
+      const mod = rows.filter(row => row.kind === "mod").length;
+      const same = rows.filter(row => row.kind === "context").length;
+      els.addCount.textContent = add;
+      els.delCount.textContent = del;
+      els.modCount.textContent = mod;
+      els.sameCount.textContent = same;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    async function importFile(input, targetTextarea, targetNameKey) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      targetTextarea.value = await file.text();
+      state[targetNameKey] = file.name;
+      render();
+    }
+
+    function syncScroll(from, to) {
+      if (syncing) return;
+      syncing = true;
+      to.scrollTop = from.scrollTop;
+      to.scrollLeft = from.scrollLeft;
+      els.connectors.style.setProperty("--scroll-offset", `${-from.scrollTop}px`);
+      requestAnimationFrame(() => { syncing = false; });
+    }
+
+    els.oldFile.addEventListener("change", () => importFile(els.oldFile, els.oldText, "oldName"));
+    els.newFile.addEventListener("change", () => importFile(els.newFile, els.newText, "newName"));
+    els.compareButton.addEventListener("click", render);
+    els.resetButton.addEventListener("click", resetToDefaults);
+    els.swapButton.addEventListener("click", () => {
+      const text = els.oldText.value;
+      els.oldText.value = els.newText.value;
+      els.newText.value = text;
+      const name = state.oldName;
+      state.oldName = state.newName;
+      state.newName = name;
+      render();
+    });
+    els.oldText.addEventListener("input", render);
+    els.newText.addEventListener("input", render);
+    els.leftPane.addEventListener("scroll", () => syncScroll(els.leftPane, els.rightPane), { passive: true });
+    els.rightPane.addEventListener("scroll", () => syncScroll(els.rightPane, els.leftPane), { passive: true });
+
+    loadDefaults();
+  </script>
+</body>
+</html>

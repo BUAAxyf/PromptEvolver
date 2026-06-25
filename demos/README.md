@@ -13,3 +13,4 @@
 
 - `prompt-evolver-visualization/`：提示词优化路径可视化方案集合。
 - `git-diff-viewer/`：类似 PyCharm Git diff 的左右并列审阅页面，支持新增、删除、修改色块和同步滚动。
+- `prompt-diff-viewer/`：用于对比两个 Markdown prompt 的左右并列 diff 页面，支持 CLI 默认加载、本地文件导入和复制粘贴。

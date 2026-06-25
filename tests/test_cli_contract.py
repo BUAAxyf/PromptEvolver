@@ -18,6 +18,7 @@ class CliContractTests(unittest.TestCase):
         self.assertIn("split", result.output)
         self.assertIn("test-step", result.output)
         self.assertIn("score-accuracy", result.output)
+        self.assertIn("prompt-diff", result.output)
 
     def test_skill_reference_contains_subagent_guardrails(self):
         root = Path(__file__).resolve().parents[1]

@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Git Diff Workbench Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #e9edf1;
+      --chrome: #f8fafb;
+      --panel: #ffffff;
+      --ink: #1c2228;
+      --muted: #697681;
+      --line: #cfd7df;
+      --line-strong: #9aa8b5;
+      --blue: #285f8f;
+      --green: #1e7a43;
+      --green-bg: #e5f5e9;
+      --red: #aa3f3c;
+      --red-bg: #f9e5e3;
+      --amber: #9a6a18;
+      --amber-bg: #fff3cf;
+      --violet: #5f4b8b;
+      --code: #111820;
+      --gutter: #f1f4f6;
+      --shadow: 0 18px 46px rgba(42, 53, 66, 0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(55, 70, 84, .05) 1px, transparent 1px) 0 0 / 32px 32px,
+        linear-gradient(rgba(55, 70, 84, .045) 1px, transparent 1px) 0 0 / 32px 32px,
+        var(--bg);
+      font-family: "Avenir Next", "Helvetica Neue", sans-serif;
+    }
+
+    .shell {
+      width: min(1480px, calc(100vw - 34px));
+      margin: 0 auto;
+      padding: 28px 0 36px;
+    }
+
+    .topbar {
+      min-height: 64px;
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+      padding: 14px 18px;
+      background: var(--chrome);
+      border: 1px solid var(--line);
+      border-radius: 8px 8px 0 0;
+      box-shadow: var(--shadow);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      min-height: 30px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .dot.add { background: var(--green); }
+    .dot.del { background: var(--red); }
+    .dot.mod { background: var(--amber); }
+
+    .workbench {
+      display: grid;
+      grid-template-columns: 292px minmax(0, 1fr);
+      min-height: 710px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-top: 0;
+      border-radius: 0 0 8px 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: #f4f6f8;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-width: 0;
+    }
+
+    .sidebar-head {
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .branch {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .branch strong {
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .file-list {
+      margin: 0;
+      padding: 10px;
+      list-style: none;
+      display: grid;
+      gap: 7px;
+      align-content: start;
+      overflow: auto;
+    }
+
+    .file-button {
+      width: 100%;
+      min-height: 74px;
+      display: grid;
+      grid-template-columns: 10px 1fr;
+      gap: 10px;
+      align-items: stretch;
+      padding: 0;
+      border: 1px solid transparent;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      border-radius: 8px;
+    }
+
+    .file-button:hover,
+    .file-button.active {
+      border-color: var(--line);
+      background: #fff;
+    }
+
+    .file-stripe {
+      border-radius: 8px 0 0 8px;
+      background: var(--blue);
+    }
+
+    .file-button.active .file-stripe {
+      background: var(--violet);
+    }
+
+    .file-meta {
+      min-width: 0;
+      padding: 11px 10px 11px 0;
+    }
+
+    .file-name {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .file-stats {
+      display: flex;
+      gap: 8px;
+      margin-top: 9px;
+      color: var(--muted);
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 11px;
+    }
+
+    .stat-add { color: var(--green); }
+    .stat-del { color: var(--red); }
+    .stat-mod { color: var(--amber); }
+
+    .sidebar-foot {
+      padding: 13px 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .main {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      background: #fbfcfd;
+    }
+
+    .pathbar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      min-height: 54px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .path {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .mini-map {
+      width: 170px;
+      height: 18px;
+      display: grid;
+      grid-template-columns: 14fr 2fr 6fr 5fr 1fr;
+      gap: 2px;
+    }
+
+    .mini-map span {
+      border-radius: 2px;
+      background: #d9e0e6;
+    }
+
+    .mini-map .add { background: var(--green); }
+    .mini-map .del { background: var(--red); }
+    .mini-map .mod { background: var(--amber); }
+
+    .diff-wrap {
+      min-width: 0;
+      overflow-x: auto;
+      padding: 14px;
+    }
+
+    .diff-stage {
+      min-width: 980px;
+      height: 620px;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr);
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .pane {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 40px minmax(0, 1fr);
+      background: #fff;
+    }
+
+    .pane-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      background: #eef2f5;
+      font-size: 12px;
+      font-weight: 800;
+      color: #34414d;
+    }
+
+    .revision {
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .scroll-pane {
+      min-height: 0;
+      overflow: auto;
+      overscroll-behavior: contain;
+    }
+
+    .center-gutter {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 40px 1fr;
+      background: #edf1f4;
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+    }
+
+    .gutter-head {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .connectors {
+      position: relative;
+      min-height: 100%;
+      overflow: hidden;
+    }
+
+    .connector {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      border-radius: 4px;
+      opacity: .9;
+      transform: translateY(var(--scroll-offset, 0px));
+    }
+
+    .connector.add { background: rgba(30, 122, 67, .22); }
+    .connector.del { background: rgba(170, 63, 60, .22); }
+    .connector.mod { background: rgba(154, 106, 24, .25); }
+
+    .code {
+      min-width: 100%;
+      width: max-content;
+      border-collapse: collapse;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.46;
+      color: var(--code);
+    }
+
+    .code td {
+      height: 29px;
+      padding: 0;
+      vertical-align: middle;
+      white-space: pre;
+    }
+
+    .ln {
+      width: 48px;
+      min-width: 48px;
+      padding: 0 8px !important;
+      text-align: right;
+      color: #82909d;
+      background: var(--gutter);
+      border-right: 1px solid #dfe5ea;
+      user-select: none;
+    }
+
+    .mark {
+      width: 26px;
+      min-width: 26px;
+      text-align: center;
+      color: #7a8792;
+      background: #f6f8fa;
+      font-weight: 900;
+      user-select: none;
+    }
+
+    .txt {
+      min-width: 620px;
+      padding: 0 12px !important;
+      border-left: 4px solid transparent;
+    }
+
+    tr.context .txt { color: #2f3b45; }
+
+    tr.add .txt,
+    tr.add .mark,
+    tr.add .ln {
+      background: var(--green-bg);
+    }
+
+    tr.add .txt {
+      border-color: var(--green);
+      box-shadow: inset 0 0 0 1px rgba(30, 122, 67, .18);
+    }
+
+    tr.del .txt,
+    tr.del .mark,
+    tr.del .ln {
+      background: var(--red-bg);
+    }
+
+    tr.del .txt {
+      border-color: var(--red);
+      box-shadow: inset 0 0 0 1px rgba(170, 63, 60, .18);
+    }
+
+    tr.mod .txt,
+    tr.mod .mark,
+    tr.mod .ln {
+      background: var(--amber-bg);
+    }
+
+    tr.mod .txt {
+      border-color: var(--amber);
+      box-shadow: inset 0 0 0 1px rgba(154, 106, 24, .22);
+    }
+
+    tr.blank .txt,
+    tr.blank .mark,
+    tr.blank .ln {
+      background: #f8fafb;
+      color: #adb7c1;
+    }
+
+    .word-add,
+    .word-del,
+    .word-mod {
+      padding: 1px 3px;
+      border-radius: 4px;
+      font-weight: 800;
+    }
+
+    .word-add { background: rgba(30, 122, 67, .2); color: var(--green); }
+    .word-del { background: rgba(170, 63, 60, .18); color: var(--red); text-decoration: line-through; }
+    .word-mod { background: rgba(154, 106, 24, .24); color: #744e0f; }
+
+    .hunk-label td {
+      height: 34px;
+      background: #dbe8f2;
+      color: #36556e;
+      font-weight: 800;
+    }
+
+    .hunk-label .txt {
+      border-left-color: var(--blue);
+    }
+
+    @media (max-width: 980px) {
+      .topbar,
+      .workbench {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        min-height: 230px;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .file-list {
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        max-height: 260px;
+      }
+
+      .pathbar {
+        grid-template-columns: 1fr;
+      }
+
+      .toolbar {
+        justify-content: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>Git Diff Workbench</h1>
+        <div class="subtitle">commit 96e2f4a - refactor(cli): 重构模型配置字段和训练测试分离功能</div>
+      </div>
+      <nav class="toolbar" aria-label="diff legend">
+        <span class="pill"><span class="dot add"></span>新增</span>
+        <span class="pill"><span class="dot del"></span>删除</span>
+        <span class="pill"><span class="dot mod"></span>修改</span>
+        <span class="pill">同步滚动已启用</span>
+      </nav>
+    </header>
+
+    <section class="workbench" aria-label="PyCharm style git diff demo">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <div class="branch">
+            <span>Local changes from</span>
+            <strong>git show HEAD</strong>
+          </div>
+        </div>
+        <ul class="file-list" id="fileList" aria-label="changed files"></ul>
+        <div class="sidebar-foot">示例数据以本仓库最近一次 `git show HEAD` 为基础整理；点击文件可切换左右并列视图。</div>
+      </aside>
+
+      <section class="main">
+        <div class="pathbar">
+          <div class="path" id="pathLabel"></div>
+          <div class="mini-map" aria-hidden="true">
+            <span></span><span class="mod"></span><span class="add"></span><span class="del"></span><span></span>
+          </div>
+        </div>
+
+        <div class="diff-wrap">
+          <div class="diff-stage">
+            <section class="pane" aria-label="left revision">
+              <div class="pane-title">
+                <span>Before</span>
+                <span class="revision">5c7e292</span>
+              </div>
+              <div class="scroll-pane" id="leftPane">
+                <table class="code" aria-label="before code"><tbody id="leftCode"></tbody></table>
+              </div>
+            </section>
+
+            <div class="center-gutter" aria-hidden="true">
+              <div class="gutter-head"></div>
+              <div class="connectors" id="connectors"></div>
+            </div>
+
+            <section class="pane" aria-label="right revision">
+              <div class="pane-title">
+                <span>After</span>
+                <span class="revision">96e2f4a</span>
+              </div>
+              <div class="scroll-pane" id="rightPane">
+                <table class="code" aria-label="after code"><tbody id="rightCode"></tbody></table>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const files = [
+      {
+        path: "src/prompt_evolver/workflow.py",
+        add: 267,
+        del: 2,
+        mod: 3,
+        rows: [
+          hunk("@@ -1,12 +1,13 @@"),
+          context(1, 1, "from __future__ import annotations"),
+          context(2, 2, ""),
+          context(3, 3, "import json"),
+          added(null, 4, "import random"),
+          context(4, 5, "import shutil"),
+          context(5, 6, "from pathlib import Path"),
+          context(6, 7, "from typing import Any"),
+          context(7, 8, ""),
+          mod(9, 10, "from .model import <span class=\"word-del\">DspyTargetModel</span>, ModelConfig", "from .model import ModelConfig, <span class=\"word-add\">TargetModelClient</span>"),
+          deleted(10, null, "# old adapter name leaked DSPy-specific terminology"),
+          added(null, 11, "# model adapter naming is now runtime-neutral"),
+          context(10, 11, "from .renderer import extract_mustache_variables, missing_variables, render_template"),
+          context(11, 12, "from .schemas import compute_metrics, normalize_variables_file"),
+          context(19, 20, "SCHEMA_VERSION = \"1.0\""),
+          added(null, 21, "CASE_LIST_FIELDS = (\"cases\", \"examples\", \"evaluation_cases\")"),
+          hunk("@@ -86,7 +88,7 @@ def run_target_model("),
+          context(86, 88, "    out: Path,"),
+          context(87, 89, "    model_config: ModelConfig,"),
+          context(88, 90, ") -> list[dict[str, Any]]:"),
+          mod(89, 91, "    client = <span class=\"word-del\">DspyTargetModel</span>(model_config)", "    client = <span class=\"word-add\">TargetModelClient</span>(model_config)"),
+          context(90, 92, "    records: list[dict[str, Any]] = []"),
+          context(91, 93, "    for rendered in read_jsonl(rendered_cases):"),
+          context(92, 94, "        output = client.generate(rendered[\"rendered_prompt\"])"),
+          hunk("@@ -112,6 +114,129 @@ def run_target_model("),
+          added(null, 114, "def split_train_test("),
+          added(null, 115, "    variables_file: Path,"),
+          added(null, 116, "    train_out: Path,"),
+          added(null, 117, "    test_out: Path,"),
+          added(null, 118, "    train_ratio: float = 0.7,"),
+          added(null, 119, "    seed: int = 13,"),
+          added(null, 120, ") -> dict[str, Any]:"),
+          added(null, 121, "    if not 0 < train_ratio < 1:"),
+          added(null, 122, "        raise ValidationError(\"train_ratio must be between 0 and 1\")"),
+          added(null, 123, "    normalize_variables_file(variables_file)"),
+          added(null, 124, "    data = load_json(variables_file)"),
+          added(null, 125, "    raw_cases, case_field, root_is_array = _raw_case_list(data)"),
+          added(null, 126, "    if len(raw_cases) < 2:"),
+          added(null, 127, "        raise ValidationError(\"at least two cases are required to split train and test sets\")"),
+          added(null, 128, ""),
+          added(null, 129, "    train_indices, test_indices = _stratified_indices(raw_cases, train_ratio, seed)"),
+          added(null, 130, "    if not train_indices or not test_indices:"),
+          added(null, 131, "        raise ValidationError(\"split produced an empty train or test set\")"),
+          added(null, 132, ""),
+          added(null, 133, "    train_payload = _replace_case_list(data, case_field, root_is_array, [raw_cases[i] for i in train_indices])"),
+          added(null, 134, "    test_payload = _replace_case_list(data, case_field, root_is_array, [raw_cases[i] for i in test_indices])"),
+          added(null, 135, "    write_json(train_out, train_payload)"),
+          added(null, 136, "    write_json(test_out, test_payload)"),
+          added(null, 137, "    return {"),
+          added(null, 138, "        \"schema_version\": SCHEMA_VERSION,"),
+          added(null, 139, "        \"variables_file\": str(variables_file),"),
+          added(null, 140, "        \"train_out\": str(train_out),"),
+          added(null, 141, "        \"test_out\": str(test_out),"),
+          added(null, 142, "        \"train_ratio\": train_ratio,"),
+          added(null, 143, "        \"test_ratio\": round(1 - train_ratio, 10),"),
+          added(null, 144, "        \"seed\": seed,"),
+          added(null, 145, "        \"stratify_by\": \"expected.ground_truth\","),
+          added(null, 146, "        \"case_count\": len(raw_cases),"),
+          added(null, 147, "        \"train_count\": len(train_indices),"),
+          added(null, 148, "        \"test_count\": len(test_indices),"),
+          added(null, 149, "    }"),
+          added(null, 150, ""),
+          added(null, 151, ""),
+          added(null, 152, "def score_accuracy("),
+          added(null, 153, "    variables_file: Path,"),
+          added(null, 154, "    target_outputs: Path,"),
+          added(null, 155, "    out: Path | None = None,"),
+          added(null, 156, ") -> dict[str, Any]:"),
+          added(null, 157, "    bundle = normalize_variables_file(variables_file)"),
+          added(null, 158, "    outputs_by_case = {record[\"case_id\"]: record for record in read_jsonl(target_outputs)}"),
+          added(null, 159, "    case_scores: list[dict[str, Any]] = []"),
+          added(null, 160, "    correct_count = 0"),
+          added(null, 161, "    parse_error_count = 0"),
+          added(null, 162, "    unscored_count = 0"),
+          added(null, 163, "    for case in bundle.cases:"),
+          added(null, 164, "        output_record = outputs_by_case.get(case.case_id)"),
+          added(null, 165, "        output_text = str(output_record.get(\"output_text\", \"\")) if output_record else \"\""),
+          added(null, 166, "        parsed, parse_error = _parse_json_output(output_text)"),
+          added(null, 167, "        expected_options = _expected_options(case.expected)")
+        ]
+      },
+      {
+        path: "src/prompt_evolver/cli.py",
+        add: 99,
+        del: 3,
+        mod: 11,
+        rows: [
+          hunk("@@ -27,12 +27,15 @@ from .workflow import ("),
+          context(27, 27, "    optimize_step,"),
+          context(28, 28, "    render_cases,"),
+          context(29, 29, "    run_target_model,"),
+          added(null, 30, "    score_accuracy,"),
+          added(null, 31, "    split_train_test,"),
+          added(null, 32, "    test_step,"),
+          context(30, 33, "    validate_inputs,"),
+          context(31, 34, ")"),
+          context(32, 35, ""),
+          context(33, 36, "app = typer.Typer("),
+          context(34, 37, "    name=\"prompt-evolver\","),
+          mod(35, 38, "    help=\"Prompt optimization CLI for <span class=\"word-del\">Codex Judge</span> workflows.\",", "    help=\"Prompt optimization CLI for <span class=\"word-add\">file-based review</span> workflows.\","),
+          context(36, 39, "    no_args_is_help=True,"),
+          hunk("@@ -53,36 +56,36 @@ def _model_config("),
+          mod(53, 56, "    model_name = model or os.environ.get(\"<span class=\"word-del\">DSPY_MODEL</span>\")", "    model_name = model or os.environ.get(\"<span class=\"word-add\">MODEL_NAME</span>\")"),
+          mod(55, 58, "        missing_keys = [\"<span class=\"word-del\">DSPY_MODEL</span>\"]", "        missing_keys = [\"<span class=\"word-add\">MODEL_NAME</span>\"]"),
+          mod(57, 60, "            missing_keys.append(\"<span class=\"word-del\">DSPY_API_KEY</span>\")", "            missing_keys.append(\"<span class=\"word-add\">MODEL_API_KEY</span>\")"),
+          mod(63, 66, "            \"model is required via --model or <span class=\"word-del\">DSPY_MODEL</span>. \"", "            \"model is required via --model or <span class=\"word-add\">MODEL_NAME</span>. \""),
+          mod(71, 74, "            temperature if temperature is not None else env_float(\"<span class=\"word-del\">DSPY__TEMPERATURE</span>\")", "            temperature if temperature is not None else env_float(\"<span class=\"word-add\">MODEL_TEMPERATURE</span>\")"),
+          mod(73, 76, "        resolved_max_tokens = max_tokens if max_tokens is not None else env_int(\"<span class=\"word-del\">DSPY__MAX_TOKENS</span>\")", "        resolved_max_tokens = max_tokens if max_tokens is not None else env_int(\"<span class=\"word-add\">MODEL_MAX_TOKENS</span>\")"),
+          mod(78, 81, "            else env_bool(\"<span class=\"word-del\">EVO_EVAL_ENABLE_THINKING</span>\")", "            else env_bool(\"<span class=\"word-add\">MODEL_ENABLE_THINKING</span>\")"),
+          hunk("@@ -162,19 +165,33 @@ def render("),
+          added(null, 165, "@app.command()"),
+          added(null, 166, "def split("),
+          added(null, 167, "    variables_file: Path = typer.Argument(..., exists=True, readable=True),"),
+          added(null, 168, "    train_out: Path = typer.Option(Path(\".prompt-evolver/train.json\"), \"--train-out\"),"),
+          added(null, 169, "    test_out: Path = typer.Option(Path(\".prompt-evolver/test.json\"), \"--test-out\"),"),
+          added(null, 170, "    train_ratio: float = typer.Option(0.7, \"--train-ratio\"),"),
+          added(null, 171, "    seed: int = typer.Option(13, \"--seed\"),"),
+          added(null, 172, ") -> None:"),
+          added(null, 173, "    \"\"\"Split variables JSON into stratified train and test sets.\"\"\""),
+          added(null, 174, "    train_out.parent.mkdir(parents=True, exist_ok=True)"),
+          added(null, 175, "    test_out.parent.mkdir(parents=True, exist_ok=True)"),
+          added(null, 176, "    _echo_json(split_train_test(variables_file, train_out, test_out, train_ratio, seed))"),
+          hunk("@@ -232,6 +249,16 @@ def ingest_judgement_command("),
+          added(null, 249, "@app.command(\"score-accuracy\")"),
+          added(null, 250, "def score_accuracy_command("),
+          added(null, 251, "    variables_file: Path = typer.Argument(..., exists=True, readable=True),"),
+          added(null, 252, "    target_outputs: Path = typer.Argument(..., exists=True, readable=True),"),
+          added(null, 253, "    out: Path | None = typer.Option(None, \"--out\", \"-o\"),"),
+          added(null, 254, ") -> None:"),
+          added(null, 255, "    \"\"\"Score target outputs against expected ground truth.\"\"\""),
+          added(null, 256, "    _echo_json(score_accuracy(variables_file, target_outputs, out))")
+        ]
+      },
+      {
+        path: "README.md",
+        add: 86,
+        del: 2,
+        mod: 8,
+        rows: [
+          hunk("@@ -10,17 +10,19 @@ The CLI is responsible"),
+          context(10, 10, "## Core Capabilities"),
+          context(11, 11, ""),
+          context(12, 12, "- Render a Mustache prompt template with a single JSON file containing multiple evaluation cases."),
+          context(13, 13, "- Treat each rendered prompt as a task instance, also called a rendered prompt, prompt instantiation, or evaluation case/example."),
+          added(null, 14, "- Split one variables file into deterministic train and test files, stratified by `expected.ground_truth` with a default 70% / 30% ratio."),
+          mod(14, 15, "- Call the target model with <span class=\"word-del\">DSPy</span> in `run` and `optimize-step`.", "- Call the <span class=\"word-add\">configured</span> target model in `run` and `optimize-step`."),
+          context(15, 16, "- Exchange structured judgement results through JSON files instead of coupling review to the CLI."),
+          context(16, 17, "- Keep prompt generation outside the CLI; edit the prompt template from review findings between evaluation steps."),
+          context(17, 18, "- Optimize only the prompt template; the CLI never rewrites the variables file or appends bad cases to prompts."),
+          added(null, 19, "- Keep prompt iteration on the training set and run held-out test accuracy once with `test-step`."),
+          hunk("@@ -120,28 +122,40 @@ The variables file is one JSON file"),
+          mod(123, 125, "<span class=\"word-del\">Validate the checked-in sample inputs:</span>", "<span class=\"word-add\">When no explicit train/test files are provided, create the default split first:</span>"),
+          added(null, 128, "prompt-evolver split examples/task.example.json --train-out .prompt-evolver/train.json --test-out .prompt-evolver/test.json"),
+          added(null, 134, "prompt-evolver validate examples/prompt.example.md .prompt-evolver/train.json"),
+          added(null, 140, "prompt-evolver validate examples/prompt.example.md .prompt-evolver/test.json"),
+          added(null, 186, "prompt-evolver test-step .prompt-evolver/final/best_prompt.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id final_test --model \"$MODEL_NAME\""),
+          added(null, 192, "prompt-evolver score-accuracy .prompt-evolver/test.json .prompt-evolver/target_outputs_final_test.jsonl --out .prompt-evolver/accuracy_final_test.json")
+        ]
+      }
+    ];
+
+    function context(leftNo, rightNo, text) {
+      return { kind: "context", leftNo, rightNo, left: text, right: text };
+    }
+
+    function added(leftNo, rightNo, text) {
+      return { kind: "add", leftNo, rightNo, left: "", right: text };
+    }
+
+    function deleted(leftNo, rightNo, text) {
+      return { kind: "del", leftNo, rightNo, left: text, right: "" };
+    }
+
+    function mod(leftNo, rightNo, left, right) {
+      return { kind: "mod", leftNo, rightNo, left, right };
+    }
+
+    function hunk(label) {
+      return { kind: "hunk", label };
+    }
+
+    const fileList = document.getElementById("fileList");
+    const pathLabel = document.getElementById("pathLabel");
+    const leftCode = document.getElementById("leftCode");
+    const rightCode = document.getElementById("rightCode");
+    const leftPane = document.getElementById("leftPane");
+    const rightPane = document.getElementById("rightPane");
+    const connectors = document.getElementById("connectors");
+
+    let activeIndex = 0;
+    let syncing = false;
+
+    function renderFileList() {
+      fileList.innerHTML = files.map((file, index) => `
+        <li>
+          <button class="file-button ${index === activeIndex ? "active" : ""}" data-index="${index}" type="button">
+            <span class="file-stripe"></span>
+            <span class="file-meta">
+              <span class="file-name">${file.path}</span>
+              <span class="file-stats">
+                <span class="stat-add">+${file.add}</span>
+                <span class="stat-del">-${file.del}</span>
+                <span class="stat-mod">${file.mod} modified</span>
+              </span>
+            </span>
+          </button>
+        </li>
+      `).join("");
+    }
+
+    function rowHtml(row, side) {
+      if (row.kind === "hunk") {
+        return `<tr class="hunk-label"><td class="ln"></td><td class="mark">@@</td><td class="txt">${row.label}</td></tr>`;
+      }
+      const isLeft = side === "left";
+      const lineNo = isLeft ? row.leftNo : row.rightNo;
+      const text = isLeft ? row.left : row.right;
+      const blank = text === "";
+      const mark = row.kind === "add" ? "+" : row.kind === "del" ? "-" : row.kind === "mod" ? "~" : "";
+      let cls = row.kind;
+      if ((row.kind === "add" && isLeft) || (row.kind === "del" && !isLeft) || blank) {
+        cls = "blank";
+      }
+      return `<tr class="${cls}"><td class="ln">${lineNo ?? ""}</td><td class="mark">${blank ? "" : mark}</td><td class="txt">${text}</td></tr>`;
+    }
+
+    function renderDiff(index) {
+      activeIndex = index;
+      const file = files[index];
+      pathLabel.textContent = file.path;
+      leftCode.innerHTML = file.rows.map(row => rowHtml(row, "left")).join("");
+      rightCode.innerHTML = file.rows.map(row => rowHtml(row, "right")).join("");
+      leftPane.scrollTop = 0;
+      rightPane.scrollTop = 0;
+      renderFileList();
+      renderConnectors(file.rows);
+    }
+
+    function renderConnectors(rows) {
+      connectors.innerHTML = "";
+      const rowHeight = 29;
+      rows.forEach((row, index) => {
+        if (!["add", "del", "mod"].includes(row.kind)) return;
+        const item = document.createElement("span");
+        item.className = `connector ${row.kind}`;
+        item.style.top = `${index * rowHeight}px`;
+        item.style.height = `${Math.max(18, rowHeight - 7)}px`;
+        connectors.appendChild(item);
+      });
+    }
+
+    fileList.addEventListener("click", event => {
+      const button = event.target.closest(".file-button");
+      if (!button) return;
+      renderDiff(Number(button.dataset.index));
+    });
+
+    function syncScroll(from, to) {
+      if (syncing) return;
+      syncing = true;
+      to.scrollTop = from.scrollTop;
+      to.scrollLeft = from.scrollLeft;
+      connectors.style.setProperty("--scroll-offset", `${-from.scrollTop}px`);
+      requestAnimationFrame(() => { syncing = false; });
+    }
+
+    leftPane.addEventListener("scroll", () => syncScroll(leftPane, rightPane), { passive: true });
+    rightPane.addEventListener("scroll", () => syncScroll(rightPane, leftPane), { passive: true });
+
+    renderFileList();
+    renderDiff(0);
+  </script>
+</body>
+</html>

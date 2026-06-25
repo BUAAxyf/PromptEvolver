@@ -165,6 +165,13 @@ Required rules:
     ```
 
     Report `.prompt-evolver/accuracy_final_test.json` as the final held-out accuracy. Do not rewrite the prompt after this step.
+16. Open the prompt diff review UI for the user:
+
+    ```bash
+    prompt-evolver prompt-diff <input_prompt.md> .prompt-evolver/final/best_prompt.md
+    ```
+
+    The command starts a local foreground server, opens the browser when possible, and prints the review URL. Tell the user to open the URL and inspect the side-by-side prompt diff; stop the server with `Ctrl+C` after review.
 
 ## Judgement JSON Contract
 

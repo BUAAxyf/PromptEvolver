@@ -20,6 +20,11 @@ from .config import (
 )
 from .errors import PromptEvolverError
 from .model import ModelConfig
+from .prompt_diff_server import (
+    DEFAULT_PROMPT_DIFF_PORT,
+    create_prompt_diff_server,
+    open_prompt_diff_browser,
+)
 from .workflow import (
     finalize_prompt,
     ingest_judgement,
@@ -357,6 +362,32 @@ def finalize(
             target_average_score_100=target_average_score_100,
         )
     )
+
+
+@app.command("prompt-diff")
+def prompt_diff_command(
+    original_prompt: Path = typer.Argument(..., exists=True, readable=True),
+    revised_prompt: Path = typer.Argument(..., exists=True, readable=True),
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(DEFAULT_PROMPT_DIFF_PORT, "--port"),
+    open_browser: bool = typer.Option(True, "--open-browser/--no-open-browser"),
+) -> None:
+    """Open a local browser UI for side-by-side prompt Markdown diff review."""
+    server, info = create_prompt_diff_server(original_prompt, revised_prompt, host, port)
+    typer.echo("Prompt diff viewer is running.")
+    typer.echo(f"URL: {info.url}")
+    typer.echo(f"Original prompt: {info.original_prompt}")
+    typer.echo(f"Revised prompt: {info.revised_prompt}")
+    typer.echo("Review the diff in your browser. Press Ctrl+C in this terminal to stop the server.")
+    if open_browser:
+        opened = open_prompt_diff_browser(info.url)
+        typer.echo("Browser open requested." if opened else "Browser auto-open failed; open the URL manually.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        typer.echo("\nPrompt diff viewer stopped.")
+    finally:
+        server.server_close()
 
 
 def main() -> None:

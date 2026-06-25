@@ -16,6 +16,7 @@ CLI 负责确定性的文件处理和目标模型执行步骤。Prompt 重写和
 - prompt 生成不放在 CLI 中；根据评审结论在两轮评估之间编辑 prompt 模板。
 - 只优化 prompt template；CLI 不会重写变量文件，也不会把 bad case 追加到 prompt 中。
 - prompt 迭代只使用训练集，最终通过 `test-step` 对 held-out 测试集做一次准确率评估。
+- prompt 迭代后可用 `prompt-diff` 打开本地左右并列 diff 审阅页面。
 - 支持按阈值和预算停止：目标通过率、目标平均 `score_100`、最大迭代预算。
 
 ## 环境要求
@@ -192,6 +193,14 @@ prompt-evolver test-step .prompt-evolver/final/best_prompt.md .prompt-evolver/te
 prompt-evolver score-accuracy .prompt-evolver/test.json .prompt-evolver/target_outputs_final_test.jsonl --out .prompt-evolver/accuracy_final_test.json
 ```
 
+Prompt 迭代结束后，打开浏览器审阅页，对比输入 prompt 和最终 prompt：
+
+```bash
+prompt-evolver prompt-diff examples/prompt.md output/trace_1782302086/final/best_prompt.md
+```
+
+该命令会以前台方式启动本地服务，尽量自动打开浏览器，打印审阅 URL，并在按下 `Ctrl+C` 后关闭服务。如果默认端口被占用，CLI 会自动尝试后续可用端口。
+
 ## Skill 用法
 
 Skill 位于 `skills/prompt-evolver`。它围绕 CLI 提供可重复工作流：输入校验、单轮目标模型评估、judge pack 评审、prompt 迭代和最终产物写出。
@@ -205,6 +214,7 @@ Skill 位于 `skills/prompt-evolver`。它围绕 CLI 提供可重复工作流：
 - 改进 prompt：`使用 $prompt-evolver 总结失败 case，更新 prompt 模板，并把本轮迭代记录到 .prompt-evolver/optimization_log.jsonl。`
 - 最终产物：`使用 $prompt-evolver 将选定 prompt 和 judgement 写出到 .prompt-evolver/final。`
 - Held-out 测试：`使用 $prompt-evolver 对 .prompt-evolver/test.json 只运行一次 test-step，并报告 .prompt-evolver/accuracy_final_test.json。`
+- Prompt diff 审阅：`运行 prompt-evolver prompt-diff examples/prompt.md output/trace_1782302086/final/best_prompt.md，然后引导用户打开打印出来的 URL 审阅左右并列 prompt diff。`
 
 ## 文档维护
 

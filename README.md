@@ -16,6 +16,7 @@ The CLI is responsible for deterministic file and model-execution steps. Prompt 
 - Keep prompt generation outside the CLI; edit the prompt template from review findings between evaluation steps.
 - Optimize only the prompt template; the CLI never rewrites the variables file or appends bad cases to prompts.
 - Keep prompt iteration on the training set and run held-out test accuracy once with `test-step`.
+- Open a local side-by-side prompt diff review page with `prompt-diff` after prompt iteration.
 - Support stopping by threshold and budget: target pass rate, target average `score_100`, and max iteration budget.
 
 ## Environment Requirements
@@ -192,6 +193,14 @@ If target outputs already exist, score them directly:
 prompt-evolver score-accuracy .prompt-evolver/test.json .prompt-evolver/target_outputs_final_test.jsonl --out .prompt-evolver/accuracy_final_test.json
 ```
 
+After prompt iteration, open a browser review page that compares the input prompt with the final prompt:
+
+```bash
+prompt-evolver prompt-diff examples/prompt.md output/trace_1782302086/final/best_prompt.md
+```
+
+The command starts a foreground local server, opens the browser when possible, prints the review URL, and stops when you press `Ctrl+C`. If the default port is occupied, the CLI automatically tries the next available port.
+
 ## Skill Usage
 
 The Skill lives in `skills/prompt-evolver`. It provides a repeatable workflow around the CLI: input validation, one-step target-model evaluation, judge-pack review, prompt iteration, and finalization.
@@ -205,6 +214,7 @@ Use these short prompts as starting points:
 - Improve the prompt: `Use $prompt-evolver to summarize failing cases, update the prompt template, and record the iteration in .prompt-evolver/optimization_log.jsonl.`
 - Finalize: `Use $prompt-evolver to finalize the selected prompt and judgement into .prompt-evolver/final.`
 - Held-out testing: `Use $prompt-evolver to run test-step once on .prompt-evolver/test.json and report .prompt-evolver/accuracy_final_test.json.`
+- Prompt diff review: `Use prompt-evolver prompt-diff examples/prompt.md output/trace_1782302086/final/best_prompt.md, then ask the user to open the printed URL and review the side-by-side prompt diff.`
 
 ## Documentation Maintenance
 
