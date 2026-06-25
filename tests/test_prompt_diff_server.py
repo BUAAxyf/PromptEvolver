@@ -8,7 +8,7 @@ from urllib.request import urlopen
 from prompt_evolver.prompt_diff_server import (
     build_prompt_diff_payload,
     create_prompt_diff_server,
-    find_prompt_diff_demo_file,
+    find_prompt_diff_viewer_file,
 )
 
 
@@ -52,12 +52,12 @@ class PromptDiffServerTests(unittest.TestCase):
         self.assertEqual(payload["original"]["name"], "original.md")
         self.assertEqual(payload["revised"]["name"], "revised.md")
 
-    def test_find_prompt_diff_demo_file_from_repo_root(self):
+    def test_find_prompt_diff_viewer_file_from_repo_root(self):
         repo_root = Path(__file__).resolve().parents[1]
-        demo = find_prompt_diff_demo_file(repo_root)
+        viewer = find_prompt_diff_viewer_file(repo_root)
 
-        self.assertEqual(demo.name, "index.html")
-        self.assertIn("prompt-diff-viewer", str(demo))
+        self.assertEqual(viewer.name, "index.html")
+        self.assertIn("static/prompt_diff_viewer", str(viewer))
 
 
 if __name__ == "__main__":

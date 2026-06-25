@@ -199,7 +199,7 @@ After prompt iteration, open a browser review page that compares the input promp
 prompt-evolver prompt-diff examples/prompt.md output/trace_1782302086/final/best_prompt.md
 ```
 
-The command starts a foreground local server, opens the browser when possible, prints the review URL, and stops when you press `Ctrl+C`. If the default port is occupied, the CLI automatically tries the next available port.
+The command starts a foreground local server from the packaged Prompt Evolver UI assets, opens the browser when possible, prints the review URL, and stops when you press `Ctrl+C`. If the default port is occupied, the CLI automatically tries the next available port.
 
 ## Skill Usage
 
@@ -224,6 +224,7 @@ Keep `README.md` and `README_CN.md` semantically aligned. Any future update to o
 
 ```text
 src/prompt_evolver/        CLI implementation
+src/prompt_evolver/static/ Packaged browser UI assets
 tests/                     Unit tests
 examples/prompt.example.md Minimal checked-in prompt example
 examples/task.example.json Minimal checked-in JSON variables example

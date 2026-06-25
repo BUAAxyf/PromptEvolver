@@ -23,7 +23,7 @@ class PromptDiffServerInfo:
     port: int
     original_prompt: Path
     revised_prompt: Path
-    demo_file: Path
+    viewer_file: Path
 
 
 def build_prompt_diff_payload(original_prompt: Path, revised_prompt: Path) -> dict[str, Any]:
@@ -46,24 +46,33 @@ def build_prompt_diff_payload(original_prompt: Path, revised_prompt: Path) -> di
     }
 
 
-def find_prompt_diff_demo_file(cwd: Path | None = None) -> Path:
+def find_prompt_diff_viewer_file(cwd: Path | None = None) -> Path:
+    package_viewer = Path(__file__).resolve().parent / "static" / "prompt_diff_viewer" / "index.html"
+    if package_viewer.exists():
+        return package_viewer
     roots = []
     if cwd is not None:
         roots.append(cwd)
     roots.append(Path.cwd())
     roots.append(Path(__file__).resolve().parents[2])
     for root in roots:
-        candidate = root / "demos" / "prompt-diff-viewer" / "index.html"
+        candidate = root / "src" / "prompt_evolver" / "static" / "prompt_diff_viewer" / "index.html"
         if candidate.exists():
             return candidate
-    raise ValidationError("prompt diff demo file not found: demos/prompt-diff-viewer/index.html")
+    raise ValidationError(
+        "prompt diff viewer file not found: src/prompt_evolver/static/prompt_diff_viewer/index.html"
+    )
+
+
+def find_prompt_diff_demo_file(cwd: Path | None = None) -> Path:
+    return find_prompt_diff_viewer_file(cwd)
 
 
 def make_prompt_diff_handler(
-    demo_file: Path,
+    viewer_file: Path,
     payload: dict[str, Any],
 ) -> type[BaseHTTPRequestHandler]:
-    demo_bytes = demo_file.read_bytes()
+    viewer_bytes = viewer_file.read_bytes()
     payload_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
     class PromptDiffHandler(BaseHTTPRequestHandler):
@@ -72,7 +81,7 @@ def make_prompt_diff_handler(
         def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
             parsed = urlparse(self.path)
             if parsed.path in {"/", "/index.html"}:
-                self._send_bytes(demo_bytes, "text/html; charset=utf-8")
+                self._send_bytes(viewer_bytes, "text/html; charset=utf-8")
                 return
             if parsed.path == "/api/prompts":
                 self._send_bytes(payload_bytes, "application/json; charset=utf-8")
@@ -104,8 +113,8 @@ def create_prompt_diff_server(
     cwd: Path | None = None,
 ) -> tuple[ThreadingHTTPServer, PromptDiffServerInfo]:
     payload = build_prompt_diff_payload(original_prompt, revised_prompt)
-    demo_file = find_prompt_diff_demo_file(cwd)
-    handler = make_prompt_diff_handler(demo_file, payload)
+    viewer_file = find_prompt_diff_viewer_file(cwd)
+    handler = make_prompt_diff_handler(viewer_file, payload)
     server = _bind_server(handler, host, port)
     bound_port = int(server.server_address[1])
     return server, PromptDiffServerInfo(
@@ -114,7 +123,7 @@ def create_prompt_diff_server(
         port=bound_port,
         original_prompt=original_prompt,
         revised_prompt=revised_prompt,
-        demo_file=demo_file,
+        viewer_file=viewer_file,
     )
 
 

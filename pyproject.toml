@@ -19,3 +19,6 @@ prompt-evolver = "prompt_evolver.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+prompt_evolver = ["static/prompt_diff_viewer/index.html"]
