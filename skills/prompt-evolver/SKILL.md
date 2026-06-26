@@ -108,16 +108,16 @@ Required rules:
 
    ```bash
    prompt-evolver config init
-   prompt-evolver config set MODEL_NAME <model-name>
-   prompt-evolver config set MODEL_API_BASE <api-base-url>
-   prompt-evolver config set MODEL_API_KEY <api-key>
-   prompt-evolver config set MODEL_TEMPERATURE 0.1
-   prompt-evolver config set MODEL_MAX_TOKENS 2048
-   prompt-evolver config set MODEL_TIMEOUT_SECONDS 90
-   prompt-evolver config set MODEL_ENABLE_THINKING true
+   prompt-evolver config set TRAIN_MODEL_NAME <model-name>
+   prompt-evolver config set TRAIN_MODEL_API_BASE <api-base-url>
+   prompt-evolver config set TRAIN_MODEL_API_KEY <api-key>
+   prompt-evolver config set TRAIN_MODEL_TEMPERATURE 0.1
+   prompt-evolver config set TRAIN_MODEL_MAX_TOKENS 2048
+   prompt-evolver config set TRAIN_MODEL_TIMEOUT_SECONDS 90
+   prompt-evolver config set TRAIN_MODEL_ENABLE_THINKING true
    ```
 
-   `blackbox-eval` uses `EVALUATOR_MODEL_*` for the independent evaluator. Leave `EVALUATOR_MODEL_*` blank to reuse the corresponding `MODEL_*` values. Set them only when the evaluator should differ:
+   `blackbox-eval` uses `EVALUATOR_MODEL_*` for the independent evaluator. Leave `EVALUATOR_MODEL_*` blank to reuse the corresponding `TRAIN_MODEL_*` values. Set them only when the evaluator should differ:
 
    ```bash
    prompt-evolver config set EVALUATOR_MODEL_NAME <model-name>
@@ -135,7 +135,7 @@ Required rules:
 6. Run one training-set target-model evaluation step:
 
    ```bash
-   prompt-evolver optimize-step <prompt.md> <train_json> --out-dir .prompt-evolver --candidate-id <candidate_id> --model "$MODEL_NAME"
+   prompt-evolver optimize-step <prompt.md> <train_json> --out-dir .prompt-evolver --candidate-id <candidate_id> --model "$TRAIN_MODEL_NAME"
    ```
 
    This command only renders cases, calls the target model, and writes `judge_pack_<candidate_id>.json`. It does not generate the next prompt.
@@ -183,7 +183,7 @@ Required rules:
 16. If the user explicitly asks for a final file-based accuracy audit, run `test-step` only after optimization stops:
 
     ```bash
-    prompt-evolver test-step <best_prompt.md> <eval_json> --out-dir .prompt-evolver --candidate-id final_test --model "$MODEL_NAME"
+    prompt-evolver test-step <best_prompt.md> <eval_json> --out-dir .prompt-evolver --candidate-id final_test --model "$TRAIN_MODEL_NAME"
     ```
 
     `test-step` writes rendered prompts and target outputs, so do not use it during black-box optimization. Do not rewrite the prompt after this optional audit.

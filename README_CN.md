@@ -50,21 +50,21 @@ source venv/bin/activate
 
 ## 配置
 
-CLI 从命令选项或环境变量读取目标模型配置：
+CLI 从命令选项或环境变量读取训练模型配置：
 
-- `MODEL_NAME`：目标模型标识。
-- `MODEL_API_BASE`：可选 API base URL。
-- `MODEL_API_KEY`：默认 API key 环境变量。
-- `MODEL_TEMPERATURE`：可选目标模型 temperature。
-- `MODEL_MAX_TOKENS`：可选最大 token 预算。
-- `MODEL_TIMEOUT_SECONDS`：可选目标模型请求超时时间。
-- `MODEL_ENABLE_THINKING`：可选布尔值，会作为 `extra_body.enable_thinking` 传给兼容的 OpenAI 风格后端。
+- `TRAIN_MODEL_NAME`：训练模型标识。
+- `TRAIN_MODEL_API_BASE`：可选 API base URL。
+- `TRAIN_MODEL_API_KEY`：默认 API key 环境变量。
+- `TRAIN_MODEL_TEMPERATURE`：可选训练模型 temperature。
+- `TRAIN_MODEL_MAX_TOKENS`：可选最大 token 预算。
+- `TRAIN_MODEL_TIMEOUT_SECONDS`：可选训练模型请求超时时间。
+- `TRAIN_MODEL_ENABLE_THINKING`：可选布尔值，会作为 `extra_body.enable_thinking` 传给兼容的 OpenAI 风格后端。
 
-`blackbox-eval` 还支持独立评测器模型。以下配置留空时会复用对应的 `MODEL_*` 目标模型配置：
+`blackbox-eval` 还支持独立评测器模型。以下配置留空时会复用对应的 `TRAIN_MODEL_*` 训练模型配置：
 
 - `EVALUATOR_MODEL_NAME`：评测器模型标识。
 - `EVALUATOR_MODEL_API_BASE`：可选评测器 API base URL。
-- `EVALUATOR_MODEL_API_KEY`：可选评测器 API key；留空时复用 `MODEL_API_KEY`。
+- `EVALUATOR_MODEL_API_KEY`：可选评测器 API key；留空时复用 `TRAIN_MODEL_API_KEY`。
 - `EVALUATOR_MODEL_TEMPERATURE`：可选评测器 temperature。
 - `EVALUATOR_MODEL_MAX_TOKENS`：可选评测器最大 token 预算。
 - `EVALUATOR_MODEL_TIMEOUT_SECONDS`：可选评测器请求超时时间。
@@ -72,7 +72,7 @@ CLI 从命令选项或环境变量读取目标模型配置：
 
 模型执行前，CLI 会自动读取当前工作目录下的 `.env`。本仓库中的 `.env*` 文件只放占位值，真实密钥应保留在本地。
 
-当设置了 `MODEL_API_BASE` 且 `MODEL_NAME` 没有 provider 前缀时，CLI 会把它视为 OpenAI 兼容模型，并在内部使用 `openai/<MODEL_NAME>`。
+当设置了 `TRAIN_MODEL_API_BASE` 且 `TRAIN_MODEL_NAME` 没有 provider 前缀时，CLI 会把它视为 OpenAI 兼容模型，并在内部使用 `openai/<TRAIN_MODEL_NAME>`。
 
 查看当前模型配置：
 
@@ -80,7 +80,7 @@ CLI 从命令选项或环境变量读取目标模型配置：
 prompt-evolver config show
 ```
 
-输出中的 `evaluator_fallbacks` 会显示哪些留空的 `EVALUATOR_MODEL_*` 字段正在复用 `MODEL_*` 配置。
+输出中的 `evaluator_fallbacks` 会显示哪些留空的 `EVALUATOR_MODEL_*` 字段正在复用 `TRAIN_MODEL_*` 配置。旧版 `MODEL_*` 变量仍会作为老本地配置的 fallback 读取，但新配置文件应使用 `TRAIN_MODEL_*`。
 
 创建首次使用的本地配置文件：
 
@@ -91,15 +91,15 @@ prompt-evolver config init
 更新模型参数：
 
 ```bash
-prompt-evolver config set MODEL_NAME DeepSeek-V4-Pro
-prompt-evolver config set MODEL_API_BASE https://example.com/v1
-prompt-evolver config set MODEL_API_KEY sk-...
-prompt-evolver config set MODEL_TEMPERATURE 0.1
-prompt-evolver config set MODEL_MAX_TOKENS 2048
-prompt-evolver config set MODEL_TIMEOUT_SECONDS 90
-prompt-evolver config set MODEL_ENABLE_THINKING true
+prompt-evolver config set TRAIN_MODEL_NAME DeepSeek-V4-Pro
+prompt-evolver config set TRAIN_MODEL_API_BASE https://example.com/v1
+prompt-evolver config set TRAIN_MODEL_API_KEY sk-...
+prompt-evolver config set TRAIN_MODEL_TEMPERATURE 0.1
+prompt-evolver config set TRAIN_MODEL_MAX_TOKENS 2048
+prompt-evolver config set TRAIN_MODEL_TIMEOUT_SECONDS 90
+prompt-evolver config set TRAIN_MODEL_ENABLE_THINKING true
 
-# 可选：只有评测器需要不同于目标模型时才设置。
+# 可选：只有评测器需要不同于训练模型时才设置。
 prompt-evolver config set EVALUATOR_MODEL_NAME DeepSeek-V4-Pro
 prompt-evolver config set EVALUATOR_MODEL_API_BASE https://example.com/v1
 prompt-evolver config set EVALUATOR_MODEL_API_KEY sk-...
@@ -168,7 +168,7 @@ prompt-evolver render examples/prompt.example.md .prompt-evolver/train.json --ou
 在训练集上运行目标模型：
 
 ```bash
-prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/target_outputs.jsonl --model "$MODEL_NAME"
+prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/target_outputs.jsonl --model "$TRAIN_MODEL_NAME"
 ```
 
 打包结构化评审材料：
@@ -186,7 +186,7 @@ prompt-evolver ingest-judgement .prompt-evolver/judgement.json --out-dir .prompt
 执行一轮自动目标模型评估并生成 judge pack：
 
 ```bash
-prompt-evolver optimize-step examples/prompt.example.md .prompt-evolver/train.json --out-dir .prompt-evolver --candidate-id initial --model "$MODEL_NAME"
+prompt-evolver optimize-step examples/prompt.example.md .prompt-evolver/train.json --out-dir .prompt-evolver --candidate-id initial --model "$TRAIN_MODEL_NAME"
 ```
 
 仓库内置样例文件是 `examples/prompt.example.md` 和 `examples/task.example.json`。本地工作输入 `examples/prompt.md` 和 `examples/task.json` 已被忽略，真实 prompt 和评估数据可以保留在本机。
@@ -210,7 +210,7 @@ prompt-evolver finalize .prompt-evolver/prompts/best.md .prompt-evolver/judgemen
 训练达到停止条件或迭代预算耗尽后，如需最终文件型准确率审计，仍可使用 `test-step`：
 
 ```bash
-prompt-evolver test-step .prompt-evolver/final/best_prompt.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id final_test --model "$MODEL_NAME"
+prompt-evolver test-step .prompt-evolver/final/best_prompt.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id final_test --model "$TRAIN_MODEL_NAME"
 ```
 
 如果目标模型输出已经存在，可以直接评分：
@@ -276,4 +276,4 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 python3 -m compileall src tests
 ```
 
-真实模型执行前，请先配置 `MODEL_NAME` 和凭据。
+真实模型执行前，请先配置 `TRAIN_MODEL_NAME` 和凭据。

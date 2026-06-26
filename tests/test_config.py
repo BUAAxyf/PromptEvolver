@@ -17,9 +17,9 @@ from prompt_evolver.model import runtime_model_name
 
 class ConfigTests(unittest.TestCase):
     def test_parse_env_line_handles_quotes_and_comments(self):
-        self.assertEqual(parse_env_line("MODEL_API_KEY='abc123'"), ("MODEL_API_KEY", "abc123"))
-        self.assertEqual(parse_env_line("export MODEL_MAX_TOKENS=2048"), ("MODEL_MAX_TOKENS", "2048"))
-        self.assertEqual(parse_env_line("MODEL_NAME=model-name # local"), ("MODEL_NAME", "model-name"))
+        self.assertEqual(parse_env_line("TRAIN_MODEL_API_KEY='abc123'"), ("TRAIN_MODEL_API_KEY", "abc123"))
+        self.assertEqual(parse_env_line("export TRAIN_MODEL_MAX_TOKENS=2048"), ("TRAIN_MODEL_MAX_TOKENS", "2048"))
+        self.assertEqual(parse_env_line("TRAIN_MODEL_NAME=model-name # local"), ("TRAIN_MODEL_NAME", "model-name"))
         self.assertIsNone(parse_env_line("# comment"))
 
     def test_model_config_loads_dotenv_defaults(self):
@@ -29,13 +29,13 @@ class ConfigTests(unittest.TestCase):
             (root / ".env").write_text(
                 "\n".join(
                     [
-                        "MODEL_NAME=test-model",
-                        "MODEL_API_BASE=https://example.invalid/v1",
-                        "MODEL_API_KEY=secret",
-                        "MODEL_TEMPERATURE=0.1",
-                        "MODEL_MAX_TOKENS=2048",
-                        "MODEL_TIMEOUT_SECONDS=90",
-                        "MODEL_ENABLE_THINKING=true",
+                        "TRAIN_MODEL_NAME=test-model",
+                        "TRAIN_MODEL_API_BASE=https://example.invalid/v1",
+                        "TRAIN_MODEL_API_KEY=secret",
+                        "TRAIN_MODEL_TEMPERATURE=0.1",
+                        "TRAIN_MODEL_MAX_TOKENS=2048",
+                        "TRAIN_MODEL_TIMEOUT_SECONDS=90",
+                        "TRAIN_MODEL_ENABLE_THINKING=true",
                     ]
                 ),
                 encoding="utf-8",
@@ -43,32 +43,57 @@ class ConfigTests(unittest.TestCase):
             try:
                 os.chdir(root)
                 with patch.dict(os.environ, {}, clear=True):
-                    config = _model_config(None, None, "MODEL_API_KEY", None, None, None, None)
+                    config = _model_config(None, None, "TRAIN_MODEL_API_KEY", None, None, None, None)
             finally:
                 os.chdir(old_cwd)
 
         self.assertEqual(config.model, "test-model")
         self.assertEqual(config.api_base, "https://example.invalid/v1")
-        self.assertEqual(config.api_key_env, "MODEL_API_KEY")
+        self.assertEqual(config.api_key_env, "TRAIN_MODEL_API_KEY")
         self.assertEqual(config.temperature, 0.1)
         self.assertEqual(config.max_tokens, 2048)
         self.assertEqual(config.timeout_seconds, 90)
         self.assertTrue(config.enable_thinking)
 
-    def test_evaluator_model_config_falls_back_to_target_model(self):
+    def test_model_config_falls_back_to_legacy_model_prefix(self):
         old_cwd = Path.cwd()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / ".env").write_text(
                 "\n".join(
                     [
-                        "MODEL_NAME=test-model",
-                        "MODEL_API_BASE=https://example.invalid/v1",
-                        "MODEL_API_KEY=secret",
-                        "MODEL_TEMPERATURE=0.2",
-                        "MODEL_MAX_TOKENS=1024",
-                        "MODEL_TIMEOUT_SECONDS=45",
-                        "MODEL_ENABLE_THINKING=false",
+                        "MODEL_NAME=legacy-model",
+                        "MODEL_API_BASE=https://legacy.invalid/v1",
+                        "MODEL_API_KEY=legacy-secret",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            try:
+                os.chdir(root)
+                with patch.dict(os.environ, {}, clear=True):
+                    config = _model_config(None, None, "TRAIN_MODEL_API_KEY", None, None, None, None)
+            finally:
+                os.chdir(old_cwd)
+
+        self.assertEqual(config.model, "legacy-model")
+        self.assertEqual(config.api_base, "https://legacy.invalid/v1")
+        self.assertEqual(config.api_key_env, "MODEL_API_KEY")
+
+    def test_evaluator_model_config_falls_back_to_train_model(self):
+        old_cwd = Path.cwd()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / ".env").write_text(
+                "\n".join(
+                    [
+                        "TRAIN_MODEL_NAME=test-model",
+                        "TRAIN_MODEL_API_BASE=https://example.invalid/v1",
+                        "TRAIN_MODEL_API_KEY=secret",
+                        "TRAIN_MODEL_TEMPERATURE=0.2",
+                        "TRAIN_MODEL_MAX_TOKENS=1024",
+                        "TRAIN_MODEL_TIMEOUT_SECONDS=45",
+                        "TRAIN_MODEL_ENABLE_THINKING=false",
                         "EVALUATOR_MODEL_NAME=",
                         "EVALUATOR_MODEL_API_BASE=",
                         "EVALUATOR_MODEL_API_KEY=",
@@ -93,7 +118,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(config.model, "test-model")
         self.assertEqual(config.api_base, "https://example.invalid/v1")
-        self.assertEqual(config.api_key_env, "MODEL_API_KEY")
+        self.assertEqual(config.api_key_env, "TRAIN_MODEL_API_KEY")
         self.assertEqual(config.temperature, 0.2)
         self.assertEqual(config.max_tokens, 1024)
         self.assertEqual(config.timeout_seconds, 45)
@@ -109,21 +134,21 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(init_model_config_file(env_file))
             self.assertFalse(init_model_config_file(env_file))
 
-            set_model_config_value(env_file, "MODEL_NAME", "DeepSeek-V4-Pro")
-            set_model_config_value(env_file, "MODEL_API_KEY", "secret-value")
-            set_model_config_value(env_file, "MODEL_MAX_TOKENS", "1024")
+            set_model_config_value(env_file, "TRAIN_MODEL_NAME", "DeepSeek-V4-Pro")
+            set_model_config_value(env_file, "TRAIN_MODEL_API_KEY", "secret-value")
+            set_model_config_value(env_file, "TRAIN_MODEL_MAX_TOKENS", "1024")
 
             values = read_env_file(env_file)
-            self.assertEqual(values["MODEL_NAME"], "DeepSeek-V4-Pro")
-            self.assertEqual(values["MODEL_API_KEY"], "secret-value")
-            self.assertEqual(values["MODEL_MAX_TOKENS"], "1024")
+            self.assertEqual(values["TRAIN_MODEL_NAME"], "DeepSeek-V4-Pro")
+            self.assertEqual(values["TRAIN_MODEL_API_KEY"], "secret-value")
+            self.assertEqual(values["TRAIN_MODEL_MAX_TOKENS"], "1024")
             self.assertIn("EVALUATOR_MODEL_NAME", values)
 
             status = model_config_status(env_file)
-            self.assertEqual(status["values"]["MODEL_API_KEY"], "secr...alue")
+            self.assertEqual(status["values"]["TRAIN_MODEL_API_KEY"], "secr...alue")
             self.assertEqual(status["missing_required"], [])
-            self.assertEqual(status["evaluator_fallbacks"]["EVALUATOR_MODEL_NAME"], "MODEL_NAME")
-            self.assertEqual(status["evaluator_fallbacks"]["EVALUATOR_MODEL_API_KEY"], "MODEL_API_KEY")
+            self.assertEqual(status["evaluator_fallbacks"]["EVALUATOR_MODEL_NAME"], "TRAIN_MODEL_NAME")
+            self.assertEqual(status["evaluator_fallbacks"]["EVALUATOR_MODEL_API_KEY"], "TRAIN_MODEL_API_KEY")
 
             set_model_config_value(env_file, "EVALUATOR_MODEL_API_KEY", "judge-secret")
             status = model_config_status(env_file)
@@ -135,9 +160,9 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 set_model_config_value(env_file, "UNKNOWN", "value")
             with self.assertRaises(ValueError):
-                set_model_config_value(env_file, "MODEL_MAX_TOKENS", "0")
+                set_model_config_value(env_file, "TRAIN_MODEL_MAX_TOKENS", "0")
             with self.assertRaises(ValueError):
-                set_model_config_value(env_file, "MODEL_ENABLE_THINKING", "maybe")
+                set_model_config_value(env_file, "TRAIN_MODEL_ENABLE_THINKING", "maybe")
             with self.assertRaises(ValueError):
                 set_model_config_value(env_file, "EVALUATOR_MODEL_MAX_TOKENS", "0")
 

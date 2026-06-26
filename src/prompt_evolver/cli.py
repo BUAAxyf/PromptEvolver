@@ -42,7 +42,7 @@ app = typer.Typer(
     help="Prompt optimization CLI for file-based review workflows.",
     no_args_is_help=True,
 )
-config_app = typer.Typer(help="View and modify target and evaluator model configuration.")
+config_app = typer.Typer(help="View and modify training and evaluator model configuration.")
 app.add_typer(config_app, name="config")
 
 
@@ -61,7 +61,7 @@ def _model_config(
 ) -> ModelConfig:
     load_dotenv_file()
     return _prefixed_model_config(
-        env_prefix="MODEL",
+        env_prefix="TRAIN_MODEL",
         model=model,
         api_base=api_base,
         api_key_env=api_key_env,
@@ -69,6 +69,7 @@ def _model_config(
         max_tokens=max_tokens,
         timeout_seconds=timeout_seconds,
         enable_thinking=enable_thinking,
+        fallback_env_prefixes=("MODEL",),
     )
 
 
@@ -91,7 +92,7 @@ def _evaluator_model_config(
         max_tokens=max_tokens,
         timeout_seconds=timeout_seconds,
         enable_thinking=enable_thinking,
-        fallback_env_prefix="MODEL",
+        fallback_env_prefixes=("TRAIN_MODEL", "MODEL"),
     )
 
 
@@ -104,20 +105,20 @@ def _prefixed_model_config(
     max_tokens: int | None,
     timeout_seconds: float | None,
     enable_thinking: bool | None,
-    fallback_env_prefix: str | None = None,
+    fallback_env_prefixes: tuple[str, ...] = (),
 ) -> ModelConfig:
     def key(suffix: str) -> str:
         return f"{env_prefix}_{suffix}"
-
-    def fallback_key(suffix: str) -> str | None:
-        return f"{fallback_env_prefix}_{suffix}" if fallback_env_prefix else None
 
     def env_value(suffix: str) -> str | None:
         value = os.environ.get(key(suffix))
         if value not in (None, ""):
             return value
-        fallback = fallback_key(suffix)
-        return os.environ.get(fallback) if fallback else None
+        for fallback_env_prefix in fallback_env_prefixes:
+            fallback_value = os.environ.get(f"{fallback_env_prefix}_{suffix}")
+            if fallback_value not in (None, ""):
+                return fallback_value
+        return None
 
     model_name = model or env_value("NAME")
     if not model_name:
@@ -147,10 +148,13 @@ def _prefixed_model_config(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     resolved_api_key_env = api_key_env
-    if not os.environ.get(resolved_api_key_env) and fallback_env_prefix:
-        fallback_api_key = fallback_key("API_KEY")
-        if fallback_api_key and os.environ.get(fallback_api_key):
+    if not os.environ.get(resolved_api_key_env):
+        for fallback_env_prefix in fallback_env_prefixes:
+            fallback_api_key = f"{fallback_env_prefix}_API_KEY"
+            if not os.environ.get(fallback_api_key):
+                continue
             resolved_api_key_env = fallback_api_key
+            break
     return ModelConfig(
         model=model_name,
         api_base=api_base or env_value("API_BASE"),
@@ -271,7 +275,7 @@ def run(
     out: Path = typer.Option(Path("target_outputs.jsonl"), "--out", "-o"),
     model: str | None = typer.Option(None, "--model"),
     api_base: str | None = typer.Option(None, "--api-base"),
-    api_key_env: str = typer.Option("MODEL_API_KEY", "--api-key-env"),
+    api_key_env: str = typer.Option("TRAIN_MODEL_API_KEY", "--api-key-env"),
     temperature: float | None = typer.Option(None, "--temperature"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
     timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
@@ -357,7 +361,7 @@ def optimize_step_command(
     candidate_id: str = typer.Option("initial", "--candidate-id"),
     model: str | None = typer.Option(None, "--model"),
     api_base: str | None = typer.Option(None, "--api-base"),
-    api_key_env: str = typer.Option("MODEL_API_KEY", "--api-key-env"),
+    api_key_env: str = typer.Option("TRAIN_MODEL_API_KEY", "--api-key-env"),
     temperature: float | None = typer.Option(None, "--temperature"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
     timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
@@ -399,7 +403,7 @@ def test_step_command(
     candidate_id: str = typer.Option("final_test", "--candidate-id"),
     model: str | None = typer.Option(None, "--model"),
     api_base: str | None = typer.Option(None, "--api-base"),
-    api_key_env: str = typer.Option("MODEL_API_KEY", "--api-key-env"),
+    api_key_env: str = typer.Option("TRAIN_MODEL_API_KEY", "--api-key-env"),
     temperature: float | None = typer.Option(None, "--temperature"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
     timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
@@ -437,7 +441,7 @@ def blackbox_eval_command(
     candidate_id: str = typer.Option("blackbox_eval", "--candidate-id"),
     model: str | None = typer.Option(None, "--model", help="Target model override."),
     api_base: str | None = typer.Option(None, "--api-base"),
-    api_key_env: str = typer.Option("MODEL_API_KEY", "--api-key-env"),
+    api_key_env: str = typer.Option("TRAIN_MODEL_API_KEY", "--api-key-env"),
     temperature: float | None = typer.Option(None, "--temperature"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
     timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),

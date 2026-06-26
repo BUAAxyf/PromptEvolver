@@ -11,7 +11,7 @@ from .errors import ModelExecutionError
 class ModelConfig:
     model: str
     api_base: str | None = None
-    api_key_env: str = "MODEL_API_KEY"
+    api_key_env: str = "TRAIN_MODEL_API_KEY"
     temperature: float | None = None
     max_tokens: int | None = None
     timeout_seconds: float | None = None

@@ -50,21 +50,21 @@ source venv/bin/activate
 
 ## Configuration
 
-The CLI reads target model settings from command options or environment variables:
+The CLI reads training model settings from command options or environment variables:
 
-- `MODEL_NAME`: target model identifier.
-- `MODEL_API_BASE`: optional API base URL.
-- `MODEL_API_KEY`: default API key environment variable.
-- `MODEL_TEMPERATURE`: optional target-model temperature.
-- `MODEL_MAX_TOKENS`: optional max token budget.
-- `MODEL_TIMEOUT_SECONDS`: optional target-model request timeout.
-- `MODEL_ENABLE_THINKING`: optional boolean passed to compatible OpenAI-style backends as `extra_body.enable_thinking`.
+- `TRAIN_MODEL_NAME`: training model identifier.
+- `TRAIN_MODEL_API_BASE`: optional API base URL.
+- `TRAIN_MODEL_API_KEY`: default API key environment variable.
+- `TRAIN_MODEL_TEMPERATURE`: optional training-model temperature.
+- `TRAIN_MODEL_MAX_TOKENS`: optional max token budget.
+- `TRAIN_MODEL_TIMEOUT_SECONDS`: optional training-model request timeout.
+- `TRAIN_MODEL_ENABLE_THINKING`: optional boolean passed to compatible OpenAI-style backends as `extra_body.enable_thinking`.
 
-`blackbox-eval` also supports an independent evaluator model. Leave these values blank to reuse the matching `MODEL_*` target-model values:
+`blackbox-eval` also supports an independent evaluator model. Leave these values blank to reuse the matching `TRAIN_MODEL_*` training-model values:
 
 - `EVALUATOR_MODEL_NAME`: evaluator model identifier.
 - `EVALUATOR_MODEL_API_BASE`: optional evaluator API base URL.
-- `EVALUATOR_MODEL_API_KEY`: optional evaluator API key. Falls back to `MODEL_API_KEY` when blank.
+- `EVALUATOR_MODEL_API_KEY`: optional evaluator API key. Falls back to `TRAIN_MODEL_API_KEY` when blank.
 - `EVALUATOR_MODEL_TEMPERATURE`: optional evaluator temperature.
 - `EVALUATOR_MODEL_MAX_TOKENS`: optional evaluator max token budget.
 - `EVALUATOR_MODEL_TIMEOUT_SECONDS`: optional evaluator request timeout.
@@ -72,7 +72,7 @@ The CLI reads target model settings from command options or environment variable
 
 The CLI automatically reads `.env` from the current working directory before model execution. The `.env*` files in this repository contain placeholders only. Keep real secrets local.
 
-When `MODEL_API_BASE` is set and `MODEL_NAME` has no provider prefix, the CLI treats it as an OpenAI-compatible model and uses `openai/<MODEL_NAME>` internally.
+When `TRAIN_MODEL_API_BASE` is set and `TRAIN_MODEL_NAME` has no provider prefix, the CLI treats it as an OpenAI-compatible model and uses `openai/<TRAIN_MODEL_NAME>` internally.
 
 View current model configuration:
 
@@ -80,7 +80,7 @@ View current model configuration:
 prompt-evolver config show
 ```
 
-The output includes `evaluator_fallbacks` so you can see which blank `EVALUATOR_MODEL_*` fields currently reuse `MODEL_*` values.
+The output includes `evaluator_fallbacks` so you can see which blank `EVALUATOR_MODEL_*` fields currently reuse `TRAIN_MODEL_*` values. Legacy `MODEL_*` variables are still read as a fallback for older local configs, but new config files should use `TRAIN_MODEL_*`.
 
 Create a first-use local config file:
 
@@ -91,15 +91,15 @@ prompt-evolver config init
 Update a model parameter:
 
 ```bash
-prompt-evolver config set MODEL_NAME DeepSeek-V4-Pro
-prompt-evolver config set MODEL_API_BASE https://example.com/v1
-prompt-evolver config set MODEL_API_KEY sk-...
-prompt-evolver config set MODEL_TEMPERATURE 0.1
-prompt-evolver config set MODEL_MAX_TOKENS 2048
-prompt-evolver config set MODEL_TIMEOUT_SECONDS 90
-prompt-evolver config set MODEL_ENABLE_THINKING true
+prompt-evolver config set TRAIN_MODEL_NAME DeepSeek-V4-Pro
+prompt-evolver config set TRAIN_MODEL_API_BASE https://example.com/v1
+prompt-evolver config set TRAIN_MODEL_API_KEY sk-...
+prompt-evolver config set TRAIN_MODEL_TEMPERATURE 0.1
+prompt-evolver config set TRAIN_MODEL_MAX_TOKENS 2048
+prompt-evolver config set TRAIN_MODEL_TIMEOUT_SECONDS 90
+prompt-evolver config set TRAIN_MODEL_ENABLE_THINKING true
 
-# Optional: set these only when the evaluator should differ from the target model.
+# Optional: set these only when the evaluator should differ from the training model.
 prompt-evolver config set EVALUATOR_MODEL_NAME DeepSeek-V4-Pro
 prompt-evolver config set EVALUATOR_MODEL_API_BASE https://example.com/v1
 prompt-evolver config set EVALUATOR_MODEL_API_KEY sk-...
@@ -168,7 +168,7 @@ prompt-evolver render examples/prompt.example.md .prompt-evolver/train.json --ou
 Run the target model on the training set:
 
 ```bash
-prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/target_outputs.jsonl --model "$MODEL_NAME"
+prompt-evolver run .prompt-evolver/rendered_cases.jsonl --out .prompt-evolver/target_outputs.jsonl --model "$TRAIN_MODEL_NAME"
 ```
 
 Package materials for structured review:
@@ -186,7 +186,7 @@ prompt-evolver ingest-judgement .prompt-evolver/judgement.json --out-dir .prompt
 Run one automated target-model step and produce a judge pack:
 
 ```bash
-prompt-evolver optimize-step examples/prompt.example.md .prompt-evolver/train.json --out-dir .prompt-evolver --candidate-id initial --model "$MODEL_NAME"
+prompt-evolver optimize-step examples/prompt.example.md .prompt-evolver/train.json --out-dir .prompt-evolver --candidate-id initial --model "$TRAIN_MODEL_NAME"
 ```
 
 The checked-in sample files are `examples/prompt.example.md` and `examples/task.example.json`. Local working inputs named `examples/prompt.md` and `examples/task.json` are ignored so real prompts and evaluation data can stay private.
@@ -210,7 +210,7 @@ prompt-evolver finalize .prompt-evolver/prompts/best.md .prompt-evolver/judgemen
 After training reaches the stopping criteria or the iteration budget is exhausted, `test-step` is still available for a final file-based accuracy audit:
 
 ```bash
-prompt-evolver test-step .prompt-evolver/final/best_prompt.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id final_test --model "$MODEL_NAME"
+prompt-evolver test-step .prompt-evolver/final/best_prompt.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id final_test --model "$TRAIN_MODEL_NAME"
 ```
 
 If target outputs already exist, score them directly:
@@ -276,4 +276,4 @@ Run a syntax compile check:
 python3 -m compileall src tests
 ```
 
-For real model execution, configure `MODEL_NAME` and credentials first.
+For real model execution, configure `TRAIN_MODEL_NAME` and credentials first.

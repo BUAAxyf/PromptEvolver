@@ -4,7 +4,17 @@ import os
 from pathlib import Path
 from typing import Any
 
-TARGET_MODEL_CONFIG_FIELDS: tuple[str, ...] = (
+TRAIN_MODEL_CONFIG_FIELDS: tuple[str, ...] = (
+    "TRAIN_MODEL_NAME",
+    "TRAIN_MODEL_API_BASE",
+    "TRAIN_MODEL_API_KEY",
+    "TRAIN_MODEL_TEMPERATURE",
+    "TRAIN_MODEL_MAX_TOKENS",
+    "TRAIN_MODEL_TIMEOUT_SECONDS",
+    "TRAIN_MODEL_ENABLE_THINKING",
+)
+
+LEGACY_MODEL_CONFIG_FIELDS: tuple[str, ...] = (
     "MODEL_NAME",
     "MODEL_API_BASE",
     "MODEL_API_KEY",
@@ -25,20 +35,29 @@ EVALUATOR_MODEL_CONFIG_FIELDS: tuple[str, ...] = (
 )
 
 MODEL_CONFIG_FIELDS: tuple[str, ...] = (
-    *TARGET_MODEL_CONFIG_FIELDS,
+    *TRAIN_MODEL_CONFIG_FIELDS,
     *EVALUATOR_MODEL_CONFIG_FIELDS,
 )
 
-SECRET_FIELDS = {"MODEL_API_KEY", "EVALUATOR_MODEL_API_KEY"}
+ALL_MODEL_CONFIG_FIELDS: tuple[str, ...] = (
+    *MODEL_CONFIG_FIELDS,
+    *LEGACY_MODEL_CONFIG_FIELDS,
+)
+
+SECRET_FIELDS = {
+    "TRAIN_MODEL_API_KEY",
+    "EVALUATOR_MODEL_API_KEY",
+    "MODEL_API_KEY",
+}
 
 DEFAULT_MODEL_CONFIG: dict[str, str] = {
-    "MODEL_NAME": "",
-    "MODEL_API_BASE": "",
-    "MODEL_API_KEY": "",
-    "MODEL_TEMPERATURE": "0.1",
-    "MODEL_MAX_TOKENS": "2048",
-    "MODEL_TIMEOUT_SECONDS": "90",
-    "MODEL_ENABLE_THINKING": "true",
+    "TRAIN_MODEL_NAME": "",
+    "TRAIN_MODEL_API_BASE": "",
+    "TRAIN_MODEL_API_KEY": "",
+    "TRAIN_MODEL_TEMPERATURE": "0.1",
+    "TRAIN_MODEL_MAX_TOKENS": "2048",
+    "TRAIN_MODEL_TIMEOUT_SECONDS": "90",
+    "TRAIN_MODEL_ENABLE_THINKING": "true",
     "EVALUATOR_MODEL_NAME": "",
     "EVALUATOR_MODEL_API_BASE": "",
     "EVALUATOR_MODEL_API_KEY": "",
@@ -115,25 +134,34 @@ def model_config_status(path: Path | str = ".env", reveal_secrets: bool = False)
     env_path = Path(path)
     file_values = read_env_file(env_path)
     effective_values = {**file_values}
-    for key in MODEL_CONFIG_FIELDS:
+    for key in ALL_MODEL_CONFIG_FIELDS:
         if key in os.environ:
             effective_values[key] = os.environ[key]
     values = {
         key: redact_value(effective_values.get(key, ""), key, reveal_secrets=reveal_secrets)
         for key in MODEL_CONFIG_FIELDS
     }
+    train_fallbacks = train_model_fallbacks(effective_values)
     evaluator_fallbacks = evaluator_model_fallbacks(effective_values)
     missing_required = [
-        key for key in ("MODEL_NAME",) if not effective_values.get(key)
+        key
+        for key in ("TRAIN_MODEL_NAME",)
+        if not effective_values.get(key) and not train_fallbacks.get(key)
     ]
     missing_recommended = [
-        key for key in ("MODEL_API_KEY",) if not effective_values.get(key)
+        key
+        for key in ("TRAIN_MODEL_API_KEY",)
+        if not effective_values.get(key) and not train_fallbacks.get(key)
     ]
     return {
         "env_file": str(env_path),
         "env_file_exists": env_path.exists(),
         "values": values,
+        "train_model_fallbacks": train_fallbacks,
         "evaluator_fallbacks": evaluator_fallbacks,
+        "legacy_model_fields_present": [
+            key for key in LEGACY_MODEL_CONFIG_FIELDS if effective_values.get(key)
+        ],
         "missing_required": missing_required,
         "missing_recommended": missing_recommended,
         "next_steps": first_use_guidance(
@@ -145,13 +173,27 @@ def model_config_status(path: Path | str = ".env", reveal_secrets: bool = False)
     }
 
 
+def train_model_fallbacks(effective_values: dict[str, str]) -> dict[str, str]:
+    fallbacks: dict[str, str] = {}
+    for train_key in TRAIN_MODEL_CONFIG_FIELDS:
+        legacy_key = train_key.removeprefix("TRAIN_")
+        if not effective_values.get(train_key) and effective_values.get(legacy_key):
+            fallbacks[train_key] = legacy_key
+    return fallbacks
+
+
 def evaluator_model_fallbacks(effective_values: dict[str, str]) -> dict[str, str]:
     fallbacks: dict[str, str] = {}
     for evaluator_key in EVALUATOR_MODEL_CONFIG_FIELDS:
-        suffix = evaluator_key.removeprefix("EVALUATOR_")
-        target_key = suffix
-        if not effective_values.get(evaluator_key) and effective_values.get(target_key):
-            fallbacks[evaluator_key] = target_key
+        suffix = evaluator_key.removeprefix("EVALUATOR_MODEL_")
+        train_key = f"TRAIN_MODEL_{suffix}"
+        legacy_key = f"MODEL_{suffix}"
+        if effective_values.get(evaluator_key):
+            continue
+        if effective_values.get(train_key):
+            fallbacks[evaluator_key] = train_key
+        elif effective_values.get(legacy_key):
+            fallbacks[evaluator_key] = legacy_key
     return fallbacks
 
 
