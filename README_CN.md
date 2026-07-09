@@ -15,6 +15,7 @@ CLI 负责确定性的文件处理和目标模型执行步骤。Prompt 重写和
 - 在 `blackbox-eval` 中调用独立评测器模型，对隐藏测评集评分且不持久化 case 级内容。
 - 通过 JSON 文件交换结构化评审结果，评审流程不耦合进 CLI。
 - prompt 生成不放在 CLI 中；根据评审结论在两轮评估之间编辑 prompt 模板。
+- 正式优化使用 `strict` 状态机工作流，确保每个候选 prompt 必须完成训练评审、judgement 读取、隐藏测评和日志记录后才能进入最终选择。
 - 只优化 prompt template；CLI 不会重写变量文件，也不会把 bad case 追加到 prompt 中。
 - badcase 分析只使用训练集，每轮迭代用隐藏测评集聚合分作为黑盒优化信号。
 - prompt 迭代后可用 `prompt-diff` 打开本地左右并列 diff 审阅页面。
@@ -141,6 +142,34 @@ Return JSON with fields: label, confidence, rationale.
 
 ## CLI 工作流
 
+正式 prompt 优化应使用 strict 状态机工作流。它会阻止候选 prompt 只拿到隐藏测评黑盒分、却没有完成训练评审的捷径式执行。
+
+先初始化 trace，完成确定性的训练/隐藏集划分，并创建 `strict_state.json`：
+
+```bash
+prompt-evolver strict init examples/task.example.json --prompt examples/prompt.example.md --out-dir .prompt-evolver --max-iterations 100 --target-pass-rate 0.95
+```
+
+每个候选 prompt 必须按下面的 strict 顺序执行：
+
+```bash
+prompt-evolver strict train-candidate .prompt-evolver/prompts/candidate_001.md --out-dir .prompt-evolver --candidate-id candidate_001 --strategy "Baseline candidate" --model "$TRAIN_MODEL_NAME"
+prompt-evolver strict ingest-candidate .prompt-evolver/judgement_candidate_001.json --out-dir .prompt-evolver --candidate-id candidate_001 --subagent-reviews .prompt-evolver/subagent_reviews_candidate_001.json
+prompt-evolver strict blackbox-candidate --out-dir .prompt-evolver --candidate-id candidate_001
+prompt-evolver strict log-candidate --out-dir .prompt-evolver --candidate-id candidate_001
+```
+
+最终写出前先审计 trace。`strict finalize` 也会先执行同等校验，若存在不完整候选会失败：
+
+```bash
+prompt-evolver strict verify --out-dir .prompt-evolver
+prompt-evolver strict finalize --out-dir .prompt-evolver
+```
+
+下面的低层命令仍可用于调试和自定义流程，但这些命令的输出不能直接计入正式优化候选；只有通过 `prompt-evolver strict ...` 记录并通过 verify 的候选才有效。
+
+### 低层命令
+
 如果没有显式提供训练集和测试集，先创建默认划分。划分过程是确定性的，使用 `--train-ratio 0.7`，并按 `expected.ground_truth` 分层抽样：
 
 ```bash
@@ -234,6 +263,7 @@ Skill 位于 `skills/prompt-evolver`。它围绕 CLI 提供可重复工作流：
 可以直接使用这些简短提示词：
 
 - 数据划分：`使用 $prompt-evolver 按默认分层 70/30 方法，将 examples/task.example.json 划分为训练集和测试集。`
+- 严格优化：`使用 $prompt-evolver strict 工作流执行每个正式候选；legacy blackbox-eval 输出只有在 strict verify 通过后才能计入结果。`
 - 输入校验：`使用 $prompt-evolver 在训练模型调用前校验 examples/prompt.example.md 和 .prompt-evolver/train.json。`
 - 单轮评估：`使用 $prompt-evolver 对 examples/prompt.example.md 和 .prompt-evolver/train.json 运行一轮 optimize-step，并把 judge pack 保存到 .prompt-evolver。`
 - 输出评审：`使用 $prompt-evolver 审阅 judge pack，逐 case 打分，并按约定 schema 写入 judgement JSON。`
@@ -252,6 +282,7 @@ Skill 位于 `skills/prompt-evolver`。它围绕 CLI 提供可重复工作流：
 ```text
 src/prompt_evolver/        CLI 实现
 src/prompt_evolver/static/ 包内浏览器 UI 资源
+src/prompt_evolver/strict.py 严格优化状态机
 tests/                     单元测试
 examples/prompt.example.md 仓库内置 prompt 样例
 examples/task.example.json 仓库内置 JSON 变量样例

@@ -23,6 +23,15 @@ from .prompt_diff_server import (
     create_prompt_diff_server,
     open_prompt_diff_browser,
 )
+from .strict import (
+    strict_blackbox_candidate,
+    strict_finalize,
+    strict_ingest_candidate,
+    strict_init,
+    strict_log_candidate,
+    strict_train_candidate,
+    strict_verify,
+)
 from .workflow import (
     blackbox_evaluate,
     finalize_prompt,
@@ -44,6 +53,8 @@ app = typer.Typer(
 )
 config_app = typer.Typer(help="View and modify training and evaluator model configuration.")
 app.add_typer(config_app, name="config")
+strict_app = typer.Typer(help="Run the strict prompt optimization state machine.")
+app.add_typer(strict_app, name="strict")
 
 
 def _echo_json(payload: Any) -> None:
@@ -232,6 +243,163 @@ def config_set(
             "status": model_config_status(env_file)["values"].get(key, ""),
         }
     )
+
+
+@strict_app.command("init")
+def strict_init_command(
+    variables_file: Path = typer.Argument(..., exists=True, readable=True),
+    prompt_template: Path = typer.Option(..., "--prompt", exists=True, readable=True),
+    out_dir: Path = typer.Option(..., "--out-dir"),
+    max_iterations: int = typer.Option(100, "--max-iterations"),
+    target_pass_rate: float = typer.Option(0.95, "--target-pass-rate"),
+    train_ratio: float = typer.Option(0.7, "--train-ratio"),
+    seed: int = typer.Option(13, "--seed"),
+    target_average_score_100: float = typer.Option(95.0, "--target-average-score-100"),
+) -> None:
+    """Initialize a strict trace with train/hidden split and state file."""
+    _echo_json(
+        strict_init(
+            variables_file,
+            prompt_template,
+            out_dir,
+            max_iterations=max_iterations,
+            target_pass_rate=target_pass_rate,
+            train_ratio=train_ratio,
+            seed=seed,
+            target_average_score_100=target_average_score_100,
+        )
+    )
+
+
+@strict_app.command("train-candidate")
+def strict_train_candidate_command(
+    source_prompt: Path = typer.Argument(..., exists=True, readable=True),
+    out_dir: Path = typer.Option(..., "--out-dir"),
+    candidate_id: str = typer.Option(..., "--candidate-id"),
+    parent_candidate_id: str | None = typer.Option(None, "--parent-candidate-id"),
+    strategy: str = typer.Option("", "--strategy"),
+    model: str | None = typer.Option(None, "--model"),
+    api_base: str | None = typer.Option(None, "--api-base"),
+    api_key_env: str = typer.Option("TRAIN_MODEL_API_KEY", "--api-key-env"),
+    temperature: float | None = typer.Option(None, "--temperature"),
+    max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
+    enable_thinking: bool | None = typer.Option(None, "--enable-thinking/--disable-thinking"),
+) -> None:
+    """Run the training-set step for one strict candidate."""
+    _echo_json(
+        strict_train_candidate(
+            source_prompt,
+            out_dir,
+            candidate_id,
+            _model_config(
+                model,
+                api_base,
+                api_key_env,
+                temperature,
+                max_tokens,
+                timeout_seconds,
+                enable_thinking,
+            ),
+            parent_candidate_id=parent_candidate_id,
+            strategy=strategy,
+        )
+    )
+
+
+@strict_app.command("ingest-candidate")
+def strict_ingest_candidate_command(
+    judgement_file: Path = typer.Argument(..., exists=True, readable=True),
+    out_dir: Path = typer.Option(..., "--out-dir"),
+    candidate_id: str = typer.Option(..., "--candidate-id"),
+    subagent_reviews: Path = typer.Option(..., "--subagent-reviews", exists=True, readable=True),
+) -> None:
+    """Ingest reviewed training judgement for one strict candidate."""
+    _echo_json(strict_ingest_candidate(judgement_file, out_dir, candidate_id, subagent_reviews))
+
+
+@strict_app.command("blackbox-candidate")
+def strict_blackbox_candidate_command(
+    out_dir: Path = typer.Option(..., "--out-dir"),
+    candidate_id: str = typer.Option(..., "--candidate-id"),
+    model: str | None = typer.Option(None, "--model", help="Target model override."),
+    api_base: str | None = typer.Option(None, "--api-base"),
+    api_key_env: str = typer.Option("TRAIN_MODEL_API_KEY", "--api-key-env"),
+    temperature: float | None = typer.Option(None, "--temperature"),
+    max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
+    enable_thinking: bool | None = typer.Option(None, "--enable-thinking/--disable-thinking"),
+    evaluator_model: str | None = typer.Option(None, "--evaluator-model"),
+    evaluator_api_base: str | None = typer.Option(None, "--evaluator-api-base"),
+    evaluator_api_key_env: str = typer.Option(
+        "EVALUATOR_MODEL_API_KEY",
+        "--evaluator-api-key-env",
+    ),
+    evaluator_temperature: float | None = typer.Option(None, "--evaluator-temperature"),
+    evaluator_max_tokens: int | None = typer.Option(None, "--evaluator-max-tokens"),
+    evaluator_timeout_seconds: float | None = typer.Option(
+        None,
+        "--evaluator-timeout-seconds",
+    ),
+    evaluator_enable_thinking: bool | None = typer.Option(
+        None,
+        "--evaluator-enable-thinking/--evaluator-disable-thinking",
+    ),
+) -> None:
+    """Run hidden black-box scoring after training judgement is ingested."""
+    _echo_json(
+        strict_blackbox_candidate(
+            out_dir,
+            candidate_id,
+            _model_config(
+                model,
+                api_base,
+                api_key_env,
+                temperature,
+                max_tokens,
+                timeout_seconds,
+                enable_thinking,
+            ),
+            _evaluator_model_config(
+                evaluator_model,
+                evaluator_api_base,
+                evaluator_api_key_env,
+                evaluator_temperature,
+                evaluator_max_tokens,
+                evaluator_timeout_seconds,
+                evaluator_enable_thinking,
+            ),
+        )
+    )
+
+
+@strict_app.command("log-candidate")
+def strict_log_candidate_command(
+    out_dir: Path = typer.Option(..., "--out-dir"),
+    candidate_id: str = typer.Option(..., "--candidate-id"),
+) -> None:
+    """Append a complete strict candidate to the optimization log."""
+    _echo_json(strict_log_candidate(out_dir, candidate_id))
+
+
+@strict_app.command("verify")
+def strict_verify_command(
+    out_dir: Path = typer.Option(..., "--out-dir"),
+) -> None:
+    """Audit strict trace completeness."""
+    report = strict_verify(out_dir)
+    _echo_json(report)
+    if not report["valid"]:
+        raise typer.Exit(code=1)
+
+
+@strict_app.command("finalize")
+def strict_finalize_command(
+    out_dir: Path = typer.Option(..., "--out-dir"),
+    candidate_id: str | None = typer.Option(None, "--candidate-id"),
+) -> None:
+    """Verify strict trace and write final artifacts."""
+    _echo_json(strict_finalize(out_dir, candidate_id))
 
 
 @app.command()

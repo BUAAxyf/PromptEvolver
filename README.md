@@ -15,6 +15,7 @@ The CLI is responsible for deterministic file and model-execution steps. Prompt 
 - Run an independent evaluator model in `blackbox-eval` to score a private evaluation set without persisting case-level content.
 - Exchange structured judgement results through JSON files instead of coupling review to the CLI.
 - Keep prompt generation outside the CLI; edit the prompt template from review findings between evaluation steps.
+- Run formal optimization through the `strict` state-machine workflow so each candidate must complete training review, judgement ingestion, hidden scoring, and logging before it can be finalized.
 - Optimize only the prompt template; the CLI never rewrites the variables file or appends bad cases to prompts.
 - Keep bad-case analysis on the training set and use hidden evaluation scores as a black-box optimization signal each iteration.
 - Open a local side-by-side prompt diff review page with `prompt-diff` after prompt iteration.
@@ -141,6 +142,34 @@ The variables file is one JSON file with multiple cases:
 
 ## CLI Workflow
 
+For formal prompt optimization, use the strict state-machine workflow. It prevents shortcut runs where candidates receive hidden black-box scores without a completed training review.
+
+Initialize a trace with deterministic train/hidden split and a `strict_state.json` file:
+
+```bash
+prompt-evolver strict init examples/task.example.json --prompt examples/prompt.example.md --out-dir .prompt-evolver --max-iterations 100 --target-pass-rate 0.95
+```
+
+For each candidate, run the required strict sequence:
+
+```bash
+prompt-evolver strict train-candidate .prompt-evolver/prompts/candidate_001.md --out-dir .prompt-evolver --candidate-id candidate_001 --strategy "Baseline candidate" --model "$TRAIN_MODEL_NAME"
+prompt-evolver strict ingest-candidate .prompt-evolver/judgement_candidate_001.json --out-dir .prompt-evolver --candidate-id candidate_001 --subagent-reviews .prompt-evolver/subagent_reviews_candidate_001.json
+prompt-evolver strict blackbox-candidate --out-dir .prompt-evolver --candidate-id candidate_001
+prompt-evolver strict log-candidate --out-dir .prompt-evolver --candidate-id candidate_001
+```
+
+Before finalization, audit the trace. `strict finalize` also runs this verification and fails if any candidate is incomplete:
+
+```bash
+prompt-evolver strict verify --out-dir .prompt-evolver
+prompt-evolver strict finalize --out-dir .prompt-evolver
+```
+
+The lower-level commands below remain available for debugging and custom workflows, but outputs from those commands should not be counted as formal optimization candidates unless they are also recorded through `prompt-evolver strict ...`.
+
+### Low-Level Commands
+
 When no explicit train/test files are provided, create the default split first. The split is deterministic, uses `--train-ratio 0.7`, and stratifies by `expected.ground_truth`:
 
 ```bash
@@ -234,6 +263,7 @@ The Skill lives in `skills/prompt-evolver`. It provides a repeatable workflow ar
 Use these short prompts as starting points:
 
 - Dataset split: `Use $prompt-evolver to split examples/task.example.json into train and test files with the default stratified 70/30 method.`
+- Strict optimization: `Use $prompt-evolver strict workflow for every formal candidate; do not count legacy blackbox-eval output unless strict verify passes.`
 - Input validation: `Use $prompt-evolver to validate examples/prompt.example.md against .prompt-evolver/train.json before any training model call.`
 - One evaluation step: `Use $prompt-evolver to run one optimize-step for examples/prompt.example.md and .prompt-evolver/train.json, then save the judge pack under .prompt-evolver.`
 - Review outputs: `Use $prompt-evolver to review the judge pack, score each case, and write judgement JSON in the expected schema.`
@@ -252,6 +282,7 @@ Keep `README.md` and `README_CN.md` semantically aligned. Any future update to o
 ```text
 src/prompt_evolver/        CLI implementation
 src/prompt_evolver/static/ Packaged browser UI assets
+src/prompt_evolver/strict.py Strict optimization state machine
 tests/                     Unit tests
 examples/prompt.example.md Minimal checked-in prompt example
 examples/task.example.json Minimal checked-in JSON variables example

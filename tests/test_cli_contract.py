@@ -20,6 +20,22 @@ class CliContractTests(unittest.TestCase):
         self.assertIn("blackbox-eval", result.output)
         self.assertIn("score-accuracy", result.output)
         self.assertIn("prompt-diff", result.output)
+        self.assertIn("strict", result.output)
+
+    def test_strict_cli_exposes_state_machine_commands(self):
+        result = CliRunner().invoke(app, ["strict", "--help"])
+
+        self.assertEqual(result.exit_code, 0)
+        for command in (
+            "init",
+            "train-candidate",
+            "ingest-candidate",
+            "blackbox-candidate",
+            "log-candidate",
+            "verify",
+            "finalize",
+        ):
+            self.assertIn(command, result.output)
 
     def test_skill_reference_contains_subagent_guardrails(self):
         root = Path(__file__).resolve().parents[1]

@@ -63,6 +63,21 @@ The script checks the root shape, case-list field, field types, unique case IDs,
 - Because the hidden evaluation score guides prompt selection each iteration, it is a black-box optimization signal rather than a pristine final held-out test.
 - Do not dispatch judge subagents on `eval_json`, do not build judge packs from `eval_json`, and do not rewrite the prompt from any hidden case-level information.
 
+## Strict Mode Enforcement
+
+For formal prompt optimization tasks, use the strict state-machine CLI. Do not count legacy command output as an optimization candidate unless it is recorded through `prompt-evolver strict ...` and `strict verify` passes.
+
+Required strict rules:
+
+- Initialize the trace with `prompt-evolver strict init`.
+- For every candidate, run the full strict sequence in order:
+  `strict train-candidate -> strict ingest-candidate -> strict blackbox-candidate -> strict log-candidate`.
+- Do not run naked `blackbox-eval` as a shortcut for candidate scoring.
+- Do not hand-write `optimization_log.jsonl`; let `strict log-candidate` append complete records with non-null training metrics and hidden aggregate metrics.
+- Do not finalize until `prompt-evolver strict verify --out-dir <trace>` succeeds.
+- If any strict command fails, stop and report the missing state or artifact instead of continuing with the next candidate.
+- Hidden evaluation isolation still applies: strict state and logs may include only aggregate hidden metrics, never hidden case IDs, rendered prompts, target outputs, judge prompts, evaluator rationales, or per-case hidden scores.
+
 ## Subagent Context Isolation Policy
 
 The master must treat every Judge subagent as context-isolated. Do not rely on inherited parent conversation, prior tool output, local files, or repository paths.
@@ -83,6 +98,8 @@ Required rules:
 
 ## Workflow
 
+Use the strict CLI for the state transitions below. The lower-level commands shown in this section explain what each strict step wraps, but they are debugging primitives and must not be used to bypass strict state checks during formal optimization.
+
 1. Read the prompt template and variables JSON only as needed to identify the input shape and prepare datasets. Do not inspect hidden evaluation case content, expected outputs, labels, or distributions.
 2. Prepare datasets:
    - If explicit train/test files are provided, use them as given.
@@ -98,6 +115,7 @@ Required rules:
    - training-set evaluation metrics and failure summaries
    - hidden evaluation aggregate score path and metrics
    - generated artifact paths
+   In strict mode, this file is appended only by `prompt-evolver strict log-candidate`; do not edit it by hand.
 4. Check target and evaluator model configuration before calling models:
 
    ```bash
@@ -178,7 +196,8 @@ Required rules:
 15. Finalize the prompt selected by the combined training review and hidden aggregate score:
 
     ```bash
-    prompt-evolver finalize <best_prompt.md> .prompt-evolver/judgement_<best_candidate_id>.json --out-dir .prompt-evolver/final
+    prompt-evolver strict verify --out-dir .prompt-evolver
+    prompt-evolver strict finalize --out-dir .prompt-evolver
     ```
 16. If the user explicitly asks for a final file-based accuracy audit, run `test-step` only after optimization stops:
 
