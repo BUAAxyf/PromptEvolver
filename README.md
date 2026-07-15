@@ -10,14 +10,16 @@ The CLI is responsible for deterministic file and model-execution steps. Prompt 
 
 - Render a Mustache prompt template with a single JSON file containing multiple evaluation cases.
 - Treat each rendered prompt as a task instance, also called a rendered prompt, prompt instantiation, or evaluation case/example.
-- Split one variables file into deterministic train and test files, stratified by `expected.ground_truth` with a default 70% / 30% ratio.
+- Audit labels, adjudication metadata, split groups, singleton classes, and conflicting duplicate cases before formal evaluation.
+- Run formal optimization with explicit train, development, and one-time final-test datasets; the legacy deterministic 70% / 30% split remains available for local experiments.
 - Call the configured target model in `run`, `optimize-step`, and `blackbox-eval`.
-- Run an independent evaluator model in `blackbox-eval` to score a private evaluation set without persisting case-level content.
+- Score structured development and final-test outputs with deterministic exact matching while persisting aggregate metrics only; use the optional LLM scorer for non-structured tasks.
 - Exchange structured judgement results through JSON files instead of coupling review to the CLI.
 - Keep prompt generation outside the CLI; edit the prompt template from review findings between evaluation steps.
-- Run formal optimization through the `strict` state-machine workflow so each candidate must complete training review, judgement ingestion, hidden scoring, and logging before it can be finalized.
+- Run formal optimization through the `strict` state-machine workflow so each candidate must complete training review, judgement ingestion, development scoring, and logging before it can be finalized.
 - Optimize only the prompt template; the CLI never rewrites the variables file or appends bad cases to prompts.
-- Keep bad-case analysis on the training set and use hidden evaluation scores as a black-box optimization signal each iteration.
+- Keep bad-case analysis on the training set, use development scores for candidate selection, and run the final test exactly once after selection.
+- Reject empty reviews, incomplete failed-case coverage, evidence-free loopholes, and empty optimization suggestions.
 - Open a local side-by-side prompt diff review page with `prompt-diff` after prompt iteration.
 - Support stopping by threshold and budget: target pass rate, target average `score_100`, and max iteration budget.
 
@@ -95,7 +97,7 @@ Update a model parameter:
 prompt-evolver config set TRAIN_MODEL_NAME DeepSeek-V4-Pro
 prompt-evolver config set TRAIN_MODEL_API_BASE https://example.com/v1
 prompt-evolver config set TRAIN_MODEL_API_KEY sk-...
-prompt-evolver config set TRAIN_MODEL_TEMPERATURE 0.1
+prompt-evolver config set TRAIN_MODEL_TEMPERATURE 0
 prompt-evolver config set TRAIN_MODEL_MAX_TOKENS 2048
 prompt-evolver config set TRAIN_MODEL_TIMEOUT_SECONDS 90
 prompt-evolver config set TRAIN_MODEL_ENABLE_THINKING true
@@ -144,27 +146,49 @@ The variables file is one JSON file with multiple cases:
 
 For formal prompt optimization, use the strict state-machine workflow. It prevents shortcut runs where candidates receive hidden black-box scores without a completed training review.
 
-Initialize a trace with deterministic train/hidden split and a `strict_state.json` file:
+For production evaluation, first audit each governed dataset. Every case must have an adjudicated label and a split group:
+
+```json
+"metadata": {
+  "label_status": "adjudicated",
+  "split_group": "semantic_group_001"
+}
+```
 
 ```bash
-prompt-evolver strict init examples/task.example.json --prompt examples/prompt.example.md --out-dir .prompt-evolver --max-iterations 100 --target-pass-rate 0.95
+prompt-evolver data-audit data/train.json
+prompt-evolver data-audit data/dev.json
+prompt-evolver data-audit data/test.json
 ```
+
+Initialize a strict v2 trace with explicit train, development, and final-test files. A `split_group` may not appear in more than one dataset:
+
+```bash
+prompt-evolver strict init examples/task.example.json --prompt examples/prompt.example.md --out-dir .prompt-evolver --train-json data/train.json --dev-json data/dev.json --test-json data/test.json --max-iterations 12 --target-pass-rate 0.95
+```
+
+Omitting all three dataset options keeps the legacy two-way split for local experiments. Its former test split is treated as a development set and cannot produce final-test claims.
 
 For each candidate, run the required strict sequence:
 
 ```bash
 prompt-evolver strict train-candidate .prompt-evolver/prompts/candidate_001.md --out-dir .prompt-evolver --candidate-id candidate_001 --strategy "Baseline candidate" --model "$TRAIN_MODEL_NAME"
 prompt-evolver strict ingest-candidate .prompt-evolver/judgement_candidate_001.json --out-dir .prompt-evolver --candidate-id candidate_001 --subagent-reviews .prompt-evolver/subagent_reviews_candidate_001.json
-prompt-evolver strict blackbox-candidate --out-dir .prompt-evolver --candidate-id candidate_001
+prompt-evolver strict dev-score-candidate --out-dir .prompt-evolver --candidate-id candidate_001 --scorer exact
 prompt-evolver strict log-candidate --out-dir .prompt-evolver --candidate-id candidate_001
 ```
+
+The review file must contain at least one review, cover every failed judgement case, attach evidence case IDs to each prompt loophole, and include at least one non-empty optimization suggestion.
 
 Before finalization, audit the trace. `strict finalize` also runs this verification and fails if any candidate is incomplete:
 
 ```bash
 prompt-evolver strict verify --out-dir .prompt-evolver
+prompt-evolver strict final-eval --out-dir .prompt-evolver --candidate-id candidate_001
 prompt-evolver strict finalize --out-dir .prompt-evolver
 ```
+
+`final-eval` only accepts the highest development-score candidate, can run only once, and locks the trace against additional candidates. Selection uses development pass rate, then L3 Macro-F1, L2 Macro-F1, and shorter prompt length as tie-breakers.
 
 The lower-level commands below remain available for debugging and custom workflows, but outputs from those commands should not be counted as formal optimization candidates unless they are also recorded through `prompt-evolver strict ...`.
 
@@ -182,7 +206,7 @@ Validate the checked-in sample prompt against the training set:
 prompt-evolver validate examples/prompt.example.md .prompt-evolver/train.json
 ```
 
-The generated test file is used as a hidden evaluation set during optimization. It may be format-validated, but test cases and expected outputs should not be opened, summarized, or used for bad-case analysis:
+The generated second file is a development set in the strict v2 terminology. It may be format-validated, but its cases and expected outputs should not be used for bad-case analysis:
 
 ```bash
 prompt-evolver validate examples/prompt.example.md .prompt-evolver/test.json
@@ -222,7 +246,7 @@ The checked-in sample files are `examples/prompt.example.md` and `examples/task.
 
 The CLI does not generate the next prompt. Use review findings to edit the prompt template, record the iteration in `.prompt-evolver/optimization_log.jsonl`, and then run `optimize-step` again with the new prompt.
 
-After each candidate prompt is produced, score the hidden evaluation set with the independent evaluator:
+The legacy `blackbox-eval` and `strict blackbox-candidate` commands remain available for semantic tasks that require an LLM evaluator. Structured classification should use `strict dev-score-candidate --scorer exact` instead:
 
 ```bash
 prompt-evolver blackbox-eval .prompt-evolver/prompts/candidate_001.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id candidate_001
@@ -262,15 +286,15 @@ The Skill lives in `skills/prompt-evolver`. It provides a repeatable workflow ar
 
 Use these short prompts as starting points:
 
-- Dataset split: `Use $prompt-evolver to split examples/task.example.json into train and test files with the default stratified 70/30 method.`
-- Strict optimization: `Use $prompt-evolver strict workflow for every formal candidate; do not count legacy blackbox-eval output unless strict verify passes.`
+- Dataset audit: `Use $prompt-evolver to audit train/dev/test files for adjudication, split groups, duplicate conflicts, and singleton labels.`
+- Strict optimization: `Use $prompt-evolver strict v2 with explicit train/dev/test files; score candidates on dev and run final-eval once after selection.`
 - Input validation: `Use $prompt-evolver to validate examples/prompt.example.md against .prompt-evolver/train.json before any training model call.`
 - One evaluation step: `Use $prompt-evolver to run one optimize-step for examples/prompt.example.md and .prompt-evolver/train.json, then save the judge pack under .prompt-evolver.`
 - Review outputs: `Use $prompt-evolver to review the judge pack, score each case, and write judgement JSON in the expected schema.`
-- Hidden evaluation: `Use $prompt-evolver to run blackbox-eval for the current prompt and .prompt-evolver/test.json, then use only the aggregate score as an optimization signal.`
+- Development evaluation: `Use $prompt-evolver to run strict dev-score-candidate with the exact scorer and use only aggregate development metrics for selection.`
 - Improve the prompt: `Use $prompt-evolver to summarize failing cases, update the prompt template, and record the iteration in .prompt-evolver/optimization_log.jsonl.`
 - Finalize: `Use $prompt-evolver to finalize the selected prompt and judgement into .prompt-evolver/final.`
-- Final file audit: `Use $prompt-evolver to run test-step once on .prompt-evolver/test.json and report .prompt-evolver/accuracy_final_test.json.`
+- Final evaluation: `Use $prompt-evolver to run strict final-eval once for the highest development-score candidate, then finalize the locked trace.`
 - Prompt diff review: `Use prompt-evolver prompt-diff examples/prompt.md output/trace_1782302086/final/best_prompt.md, then ask the user to open the printed URL and review the side-by-side prompt diff.`
 
 ## Documentation Maintenance

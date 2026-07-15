@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import random
 import shutil
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -313,6 +314,161 @@ def blackbox_evaluate(
     return {**report, "score_report": str(score_path)}
 
 
+def aggregate_exact_evaluate(
+    prompt_template: Path,
+    variables_file: Path,
+    out_dir: Path,
+    candidate_id: str,
+    target_model_config: ModelConfig,
+    report_prefix: str = "dev_score",
+) -> dict[str, Any]:
+    """Score structured expected outputs without persisting case-level content."""
+    validation = validate_inputs(prompt_template, variables_file)
+    if not validation["valid"]:
+        raise ValidationError(
+            "aggregate evaluation input has missing template variables; "
+            "details are redacted to avoid exposing evaluation cases"
+        )
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    template = prompt_template.read_text(encoding="utf-8")
+    bundle = normalize_variables_file(variables_file)
+    target_client = TargetModelClient(target_model_config)
+
+    passed_count = 0
+    parse_error_count = 0
+    unscored_count = 0
+    expected_l2: list[str] = []
+    predicted_l2: list[str | None] = []
+    expected_l3: list[str] = []
+    predicted_l3: list[str | None] = []
+    for case in bundle.cases:
+        rendered = render_template(template, case.variables)
+        target_output = target_client.generate(rendered)
+        parsed, parse_error = _parse_json_output(target_output)
+        expected_options = _expected_options(case.expected)
+        if not expected_options:
+            unscored_count += 1
+            continue
+        primary = expected_options[0]
+        if parse_error is not None:
+            parse_error_count += 1
+            _append_classification_values(
+                primary,
+                None,
+                expected_l2,
+                predicted_l2,
+                expected_l3,
+                predicted_l3,
+            )
+            continue
+        passed = any(_matches_expected(parsed, option) for option in expected_options)
+        if passed:
+            passed_count += 1
+        _append_classification_values(
+            primary,
+            parsed,
+            expected_l2,
+            predicted_l2,
+            expected_l3,
+            predicted_l3,
+        )
+
+    case_count = len(bundle.cases)
+    scored_count = case_count - unscored_count
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "candidate_id": candidate_id,
+        "prompt_template": str(prompt_template),
+        "prompt_template_sha256": sha256_text(template),
+        "scorer": "exact",
+        "case_count": case_count,
+        "scored_count": scored_count,
+        "passed_count": passed_count,
+        "pass_rate": passed_count / scored_count if scored_count else 0.0,
+        "parse_error_count": parse_error_count,
+        "unscored_count": unscored_count,
+        "json_valid_rate": (case_count - parse_error_count) / case_count if case_count else 0.0,
+        "l2_macro_f1": _macro_f1(expected_l2, predicted_l2),
+        "l3_macro_f1": _macro_f1(expected_l3, predicted_l3),
+        "target_model": target_model_config.model,
+        "created_at": utc_now_iso(),
+        "content_redaction": {
+            "case_level_outputs_persisted": False,
+            "case_ids_persisted": False,
+            "variables_file_persisted": False,
+            "rendered_prompts_persisted": False,
+            "target_outputs_persisted": False,
+            "judge_prompts_persisted": False,
+        },
+    }
+    score_path = out_dir / f"{report_prefix}_{candidate_id}.json"
+    write_json(score_path, report)
+    return {**report, "score_report": str(score_path)}
+
+
+def audit_variables_file(variables_file: Path) -> dict[str, Any]:
+    """Report label, grouping, adjudication, and duplicate-data risks without mutation."""
+    bundle = normalize_variables_file(variables_file)
+    label_pairs: Counter[str] = Counter()
+    label_fields: dict[str, Counter[str]] = defaultdict(Counter)
+    variables_groups: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    missing_split_group_ids: list[str] = []
+    unadjudicated_case_ids: list[str] = []
+
+    for case in bundle.cases:
+        options = _expected_options(case.expected)
+        primary = options[0] if options else None
+        label_key = _stable_json(primary)
+        label_pairs[label_key] += 1
+        if isinstance(primary, dict):
+            for key, value in primary.items():
+                if isinstance(value, (str, int, float, bool)) or value is None:
+                    label_fields[key][_stable_json(value)] += 1
+        variables_groups[_stable_json(case.variables)].append((case.case_id, label_key))
+        metadata = case.metadata if isinstance(case.metadata, dict) else {}
+        if not metadata.get("split_group"):
+            missing_split_group_ids.append(case.case_id)
+        if metadata.get("label_status") != "adjudicated":
+            unadjudicated_case_ids.append(case.case_id)
+
+    conflicting_duplicates = []
+    duplicate_group_count = 0
+    for rows in variables_groups.values():
+        if len(rows) < 2:
+            continue
+        duplicate_group_count += 1
+        labels = {label for _, label in rows}
+        if len(labels) > 1:
+            conflicting_duplicates.append(
+                {
+                    "case_ids": [case_id for case_id, _ in rows],
+                    "label_count": len(labels),
+                }
+            )
+
+    singleton_labels = sorted(label for label, count in label_pairs.items() if count == 1)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "variables_file": str(variables_file),
+        "case_count": len(bundle.cases),
+        "label_pair_distribution": dict(sorted(label_pairs.items())),
+        "label_field_distribution": {
+            key: dict(sorted(values.items())) for key, values in sorted(label_fields.items())
+        },
+        "singleton_label_pairs": singleton_labels,
+        "duplicate_variable_group_count": duplicate_group_count,
+        "conflicting_duplicate_groups": conflicting_duplicates,
+        "missing_split_group_count": len(missing_split_group_ids),
+        "missing_split_group_case_ids": missing_split_group_ids,
+        "unadjudicated_count": len(unadjudicated_case_ids),
+        "unadjudicated_case_ids": unadjudicated_case_ids,
+        "valid_for_three_way_evaluation": not (
+            conflicting_duplicates or missing_split_group_ids or unadjudicated_case_ids
+        ),
+    }
+
+
 def build_blackbox_judge_prompt(
     task: dict[str, Any],
     expected: Any,
@@ -567,6 +723,20 @@ def write_run_report(path: Path, summary: dict[str, Any]) -> None:
         f"- Meets success criteria: {summary['meets_success_criteria']}",
         f"- Best prompt: `{summary['best_prompt']}`",
     ]
+    if summary.get("dev_metrics"):
+        lines.extend(
+            [
+                f"- Development pass rate: {summary['dev_metrics']['pass_rate']:.2%}",
+                f"- Development criteria met: {summary['dev_meets_success_criteria']}",
+            ]
+        )
+    if summary.get("final_test_metrics"):
+        lines.extend(
+            [
+                f"- Final test pass rate: {summary['final_test_metrics']['pass_rate']:.2%}",
+                f"- Final test criteria met: {summary['final_test_meets_success_criteria']}",
+            ]
+        )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -706,3 +876,48 @@ def _dict_contains(output: dict[str, Any], expected: dict[str, Any]) -> bool:
         elif output_value != expected_value:
             return False
     return True
+
+
+def _append_classification_values(
+    expected_value: Any,
+    predicted_value: Any,
+    expected_l2: list[str],
+    predicted_l2: list[str | None],
+    expected_l3: list[str],
+    predicted_l3: list[str | None],
+) -> None:
+    if not isinstance(expected_value, dict):
+        return
+    predicted = predicted_value if isinstance(predicted_value, dict) else {}
+    if isinstance(expected_value.get("L2_category"), str):
+        expected_l2.append(expected_value["L2_category"])
+        predicted_l2.append(predicted.get("L2_category"))
+    if isinstance(expected_value.get("L3_intent"), str):
+        expected_l3.append(expected_value["L3_intent"])
+        predicted_l3.append(predicted.get("L3_intent"))
+
+
+def _macro_f1(expected: list[str], predicted: list[str | None]) -> float | None:
+    if not expected:
+        return None
+    labels = sorted(set(expected))
+    scores: list[float] = []
+    for label in labels:
+        true_positive = sum(
+            1
+            for expected_value, predicted_value in zip(expected, predicted)
+            if expected_value == label == predicted_value
+        )
+        false_positive = sum(
+            1
+            for expected_value, predicted_value in zip(expected, predicted)
+            if expected_value != label and predicted_value == label
+        )
+        false_negative = sum(
+            1
+            for expected_value, predicted_value in zip(expected, predicted)
+            if expected_value == label and predicted_value != label
+        )
+        denominator = 2 * true_positive + false_positive + false_negative
+        scores.append((2 * true_positive) / denominator if denominator else 0.0)
+    return sum(scores) / len(scores)

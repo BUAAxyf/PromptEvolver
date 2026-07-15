@@ -1,6 +1,6 @@
 ---
 name: prompt-evolver
-description: Use when optimizing a Mustache prompt template with JSON cases through the local `prompt-evolver` CLI, including default stratified train/hidden-eval splitting, train-set bad-case analysis, black-box hidden evaluation scoring, parallel judge review, prompt rewriting, and iteration logging.
+description: Use when optimizing a Mustache prompt template with JSON cases through the local `prompt-evolver` CLI, including governed train/dev/test datasets, train-set bad-case analysis, aggregate development scoring, one-time final evaluation, parallel judge review, prompt rewriting, and iteration logging.
 ---
 
 # Prompt Evolver
@@ -14,14 +14,14 @@ description: Use when optimizing a Mustache prompt template with JSON cases thro
 - Do not let the CLI generate, rewrite, or patch prompt templates.
 - Do not edit the variables JSON unless the user explicitly asks for dataset maintenance. If cases or rubrics are inadequate, report that separately.
 - Optimize only the prompt template.
-- Keep bad-case analysis and hidden evaluation isolated. The training set may be opened for bad-case analysis; the hidden evaluation set must not be opened and may only feed `blackbox-eval`, which returns aggregate scores.
+- Keep training, development, and final-test roles isolated. Only training cases may be opened for bad-case analysis; development and final-test execution may persist aggregate scores only.
 
 ## Required Inputs
 
 - A Mustache prompt template, usually `prompt.md`.
 - A JSON variables file with multiple cases, usually `task.json`.
 - Optional target thresholds: `target_pass_rate`, `target_average_score_100`, and max iteration budget.
-- Optional explicit train/test files. If the user does not specify whether to split data, split the provided variables file with the default stratified 70% train / 30% test method.
+- For formal optimization, explicit governed train/dev/test files. The legacy 70% / 30% split is only for local experiments and treats its second output as development data.
 
 Use these terms consistently:
 
@@ -47,21 +47,16 @@ python skills/prompt-evolver/scripts/validate_input_json.py <task.json> --prompt
 
 The script checks the root shape, case-list field, field types, unique case IDs, `globals` merging, inferred variables, and optional Mustache variable coverage. It prints a JSON report and exits non-zero when the input does not match `references/input-json-format.md`.
 
-## Train/Hidden Evaluation Policy
+## Train/Development/Final-Test Policy
 
-- If only one variables file is provided and the user does not explicitly opt out of splitting, run:
-
-  ```bash
-  prompt-evolver split <task.json> --train-out .prompt-evolver/train.json --test-out .prompt-evolver/test.json
-  ```
-
-- The split command uses deterministic stratified sampling by `expected.ground_truth`, with default `--train-ratio 0.7`.
-- Treat the training output as `train_json` and the test output as `eval_json`.
-- During training, all bad-case generation, judge packs, subagent review, and failure analysis must point to `train_json` only.
-- Do not open, inspect, summarize, copy, or show hidden evaluation cases, expected labels, rubrics, target outputs, judge prompts, per-case scores, or ground-truth distributions.
-- The master agent may use only aggregate `blackbox-eval` metrics from `eval_json`, such as `pass_rate`, `scored_count`, and parse/invalid counts.
-- Because the hidden evaluation score guides prompt selection each iteration, it is a black-box optimization signal rather than a pristine final held-out test.
-- Do not dispatch judge subagents on `eval_json`, do not build judge packs from `eval_json`, and do not rewrite the prompt from any hidden case-level information.
+- Formal optimization requires explicit train, development, and final-test files.
+- Before initialization, run `prompt-evolver data-audit` on all three files. Every case must have `metadata.label_status="adjudicated"` and a non-empty `metadata.split_group`; conflicting duplicates are forbidden.
+- A `split_group` must not appear in more than one dataset.
+- All bad-case generation, judge packs, subagent review, and failure analysis must point to `train_json` only.
+- Development data may feed `strict dev-score-candidate`; read only aggregate pass rate, JSON validity, and L2/L3 Macro-F1.
+- Final-test data may feed `strict final-eval` only after candidate selection. It runs exactly once and locks the trace.
+- Do not open, inspect, summarize, copy, or show development/final-test cases, expected labels, rubrics, target outputs, per-case scores, or distributions during prompt optimization.
+- If only one variables file is available, the legacy split command may be used for experiments, but its second output is development data and cannot support a final-test claim.
 
 ## Strict Mode Enforcement
 
@@ -71,12 +66,13 @@ Required strict rules:
 
 - Initialize the trace with `prompt-evolver strict init`.
 - For every candidate, run the full strict sequence in order:
-  `strict train-candidate -> strict ingest-candidate -> strict blackbox-candidate -> strict log-candidate`.
-- Do not run naked `blackbox-eval` as a shortcut for candidate scoring.
-- Do not hand-write `optimization_log.jsonl`; let `strict log-candidate` append complete records with non-null training metrics and hidden aggregate metrics.
-- Do not finalize until `prompt-evolver strict verify --out-dir <trace>` succeeds.
+  `strict train-candidate -> strict ingest-candidate -> strict dev-score-candidate -> strict log-candidate`.
+- Default to `--scorer exact` when expected values are structured. Use `--scorer llm` only when deterministic matching cannot represent the rubric.
+- Reviews must be non-empty, cover every failed judgement case, attach evidence IDs to loopholes, and include non-empty optimization suggestions.
+- Do not hand-write `optimization_log.jsonl`; let `strict log-candidate` append complete records with training metrics, development metrics, and the actual suggestions.
+- After `strict verify`, run `strict final-eval` once for the highest development-score candidate, then run `strict finalize`.
 - If any strict command fails, stop and report the missing state or artifact instead of continuing with the next candidate.
-- Hidden evaluation isolation still applies: strict state and logs may include only aggregate hidden metrics, never hidden case IDs, rendered prompts, target outputs, judge prompts, evaluator rationales, or per-case hidden scores.
+- Development and final-test isolation still applies: strict state and logs may include only aggregate metrics, never case IDs, rendered prompts, target outputs, judge prompts, evaluator rationales, or per-case scores.
 
 ## Subagent Context Isolation Policy
 
@@ -100,20 +96,18 @@ Required rules:
 
 Use the strict CLI for the state transitions below. The lower-level commands shown in this section explain what each strict step wraps, but they are debugging primitives and must not be used to bypass strict state checks during formal optimization.
 
-1. Read the prompt template and variables JSON only as needed to identify the input shape and prepare datasets. Do not inspect hidden evaluation case content, expected outputs, labels, or distributions.
+1. Read the prompt template and training JSON to identify the input shape and task intent. Do not inspect development or final-test case content, labels, or distributions.
 2. Prepare datasets:
-   - If explicit train/test files are provided, use them as given.
-   - Otherwise run the default split command from the Train/Test Phase Policy.
-   - Set `train_json` to the training file and `eval_json` to the hidden evaluation file.
-   - Validate `eval_json` format only when needed; do not inspect its case content, labels, distributions, outputs, or expected values.
-   - Use `train_json` to understand task intent, expected outputs, and rubric for prompt iteration.
+   - Audit explicit `train_json`, `dev_json`, and `test_json` with `prompt-evolver data-audit`.
+   - Require adjudicated labels, non-empty split groups, no conflicting duplicates, and no split-group overlap.
+   - Use `train_json` for prompt iteration, `dev_json` for aggregate candidate selection, and `test_json` for one final aggregate evaluation.
 3. Create or append an optimization log at `.prompt-evolver/optimization_log.jsonl`. Each iteration must record at least:
    - `candidate_id`
    - full prompt text or prompt path plus SHA-256
    - optimization strategy used for this generation
    - subagent optimization suggestions
    - training-set evaluation metrics and failure summaries
-   - hidden evaluation aggregate score path and metrics
+   - development aggregate score path and metrics
    - generated artifact paths
    In strict mode, this file is appended only by `prompt-evolver strict log-candidate`; do not edit it by hand.
 4. Check target and evaluator model configuration before calling models:
@@ -129,13 +123,13 @@ Use the strict CLI for the state transitions below. The lower-level commands sho
    prompt-evolver config set TRAIN_MODEL_NAME <model-name>
    prompt-evolver config set TRAIN_MODEL_API_BASE <api-base-url>
    prompt-evolver config set TRAIN_MODEL_API_KEY <api-key>
-   prompt-evolver config set TRAIN_MODEL_TEMPERATURE 0.1
+   prompt-evolver config set TRAIN_MODEL_TEMPERATURE 0
    prompt-evolver config set TRAIN_MODEL_MAX_TOKENS 2048
    prompt-evolver config set TRAIN_MODEL_TIMEOUT_SECONDS 90
    prompt-evolver config set TRAIN_MODEL_ENABLE_THINKING true
    ```
 
-   `blackbox-eval` uses `EVALUATOR_MODEL_*` for the independent evaluator. Leave `EVALUATOR_MODEL_*` blank to reuse the corresponding `TRAIN_MODEL_*` values. Set them only when the evaluator should differ:
+   The exact scorer does not use `EVALUATOR_MODEL_*`. Configure an independent evaluator only when `--scorer llm` is required:
 
    ```bash
    prompt-evolver config set EVALUATOR_MODEL_NAME <model-name>
@@ -150,13 +144,13 @@ Use the strict CLI for the state transitions below. The lower-level commands sho
    prompt-evolver validate <prompt.md> <train_json>
    ```
 
-6. Run one training-set target-model evaluation step:
+6. Run one strict training-set target-model evaluation step:
 
    ```bash
-   prompt-evolver optimize-step <prompt.md> <train_json> --out-dir .prompt-evolver --candidate-id <candidate_id> --model "$TRAIN_MODEL_NAME"
+   prompt-evolver strict train-candidate <prompt.md> --out-dir .prompt-evolver --candidate-id <candidate_id> --strategy "<single hypothesis>" --model "$TRAIN_MODEL_NAME"
    ```
 
-   This command only renders cases, calls the target model, and writes `judge_pack_<candidate_id>.json`. It does not generate the next prompt.
+   This command registers the candidate, renders training cases, calls the target model, and writes `judge_pack_<candidate_id>.json`. It does not generate the next prompt.
 7. Open `judge_pack_<candidate_id>.json`.
 8. Dispatch judge subagents in parallel:
    - Split cases into chunks sized for reliable review. Use as many chunks as are needed and spawn them in one tool round so the maximum available number can run concurrently.
@@ -168,44 +162,39 @@ Use the strict CLI for the state transitions below. The lower-level commands sho
    - Before spawning, check the message text for unresolved placeholders (`<<...>>`) and forbidden context references such as `parent context`, `父线程`, `上文`, `path`, `file`, or local filesystem paths. Fix them before dispatch.
 9. Collect each subagent result, close the agent, parse JSON, and save the raw aggregate to `.prompt-evolver/subagent_reviews_<candidate_id>.json`.
 10. Aggregate subagent case scores into `.prompt-evolver/judgement_<candidate_id>.json` using the Judgement JSON Contract below.
-11. Ingest judgement metrics:
+11. Ingest judgement metrics and the complete subagent review:
 
     ```bash
-    prompt-evolver ingest-judgement .prompt-evolver/judgement_<candidate_id>.json --out-dir .prompt-evolver
+    prompt-evolver strict ingest-candidate .prompt-evolver/judgement_<candidate_id>.json --out-dir .prompt-evolver --candidate-id <candidate_id> --subagent-reviews .prompt-evolver/subagent_reviews_<candidate_id>.json
     ```
 
-12. Run hidden black-box evaluation for the same candidate:
+12. Run aggregate development evaluation for the same candidate:
 
     ```bash
-    prompt-evolver blackbox-eval <prompt.md> <eval_json> --out-dir .prompt-evolver --candidate-id <candidate_id>
+    prompt-evolver strict dev-score-candidate --out-dir .prompt-evolver --candidate-id <candidate_id> --scorer exact
+    prompt-evolver strict log-candidate --out-dir .prompt-evolver --candidate-id <candidate_id>
     ```
 
     Required handling:
-    - Read only the aggregate result from `.prompt-evolver/blackbox_score_<candidate_id>.json`.
-    - Use `pass_rate` as the hidden evaluation objective-function signal for prompt selection.
-    - Do not open `eval_json`, rendered hidden prompts, target outputs, judge prompts, case IDs, per-case scores, or evaluator rationales.
-    - The command must not be replaced with `test-step`, `render`, `run`, `judge-pack`, or subagent review on `eval_json`.
+    - Read only aggregate development metrics.
+    - Select by pass rate, then L3 Macro-F1, L2 Macro-F1, and shorter prompt length.
+    - Do not open development cases or replace aggregate scoring with case-level review.
 13. If thresholds are not met and budget remains, the master agent creates the next prompt template directly:
     - Use the current prompt and aggregated subagent suggestions.
-    - Use the hidden aggregate score only as a black-box objective signal, for example to prefer candidates with higher hidden `pass_rate` and reject train-only improvements that degrade it.
+    - Use development aggregate metrics to reject train-only improvements that do not generalize.
     - Fix rules, decision logic, priority order, output contract, or ambiguity in the existing prompt.
     - Do not add raw bad cases, case IDs, case-specific examples, or a growing failure list to the prompt.
     - Preserve Mustache variables and task intent.
     - Save the next prompt with a version suffix, for example `.prompt-evolver/prompts/<next_candidate_id>.md`.
-14. Repeat `optimize-step -> subagent review -> judgement ingest -> blackbox-eval -> master prompt rewrite` until the training thresholds and hidden evaluation objective are satisfactory, or the iteration/budget limit is exhausted.
-15. Finalize the prompt selected by the combined training review and hidden aggregate score:
+14. Generate at most three single-hypothesis variants per round: one boundary repair, one simplification, and one ablation. Do not exceed 12 formal candidates by default.
+15. Repeat the strict candidate sequence until development criteria are met or the candidate budget is exhausted.
+16. Verify, run the selected candidate on the final test exactly once, and finalize:
 
     ```bash
     prompt-evolver strict verify --out-dir .prompt-evolver
+    prompt-evolver strict final-eval --out-dir .prompt-evolver --candidate-id <best_candidate_id>
     prompt-evolver strict finalize --out-dir .prompt-evolver
     ```
-16. If the user explicitly asks for a final file-based accuracy audit, run `test-step` only after optimization stops:
-
-    ```bash
-    prompt-evolver test-step <best_prompt.md> <eval_json> --out-dir .prompt-evolver --candidate-id final_test --model "$TRAIN_MODEL_NAME"
-    ```
-
-    `test-step` writes rendered prompts and target outputs, so do not use it during black-box optimization. Do not rewrite the prompt after this optional audit.
 17. Open the prompt diff review UI for the user:
 
     ```bash
@@ -220,7 +209,7 @@ Write one judgement object per candidate:
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "candidate_id": "candidate_001",
   "judge": "codex",
   "case_judgements": [
@@ -292,14 +281,18 @@ For every generation, append one JSON object to `.prompt-evolver/optimization_lo
     "pass_rate": 0.0,
     "average_score_100": 0.0
   },
-  "hidden_eval": {
-    "score_report": ".prompt-evolver/blackbox_score_candidate_001.json",
+  "dev_eval": {
+    "score_report": ".prompt-evolver/dev_score_candidate_001.json",
     "pass_rate": 0.0,
-    "scored_count": 0
+    "scored_count": 0,
+    "l2_macro_f1": 0.0,
+    "l3_macro_f1": 0.0
   },
-  "optimization_suggestions": [],
+  "optimization_suggestions": [
+    {"type": "boundary_definition", "guidance": "Clarify one reusable decision boundary."}
+  ],
   "artifact_paths": {}
 }
 ```
 
-The log is owned by the master agent. The CLI does not need workspace state to maintain it.
+The strict CLI owns the log and appends it only after training review and development scoring are complete.

@@ -1,5 +1,7 @@
 # Prompt Evolver CLI + Skill 重新设计方案
 
+> 2026-07-15 状态：正式优化流程已升级为 strict v2。生产评测使用已仲裁且按 `split_group` 隔离的 train/dev/test 三集；候选在 dev 上使用聚合指标选优，最终 test 只运行一次。下文保留最初设计背景，当前命令与约束以 README 和 `skills/prompt-evolver/SKILL.md` 为准。
+
 ## Summary
 
 - 目标：设计一个给 Codex 使用的 prompt 优化工具链，输入 Mustache prompt 模板和 JSON 变量文件，迭代得到更适合目标模型完成任务的优化后 prompt。

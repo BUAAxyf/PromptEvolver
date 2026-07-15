@@ -29,7 +29,9 @@ The CLI accepts either a root object or a root array.
       },
       "rubric": "Label must be billing.",
       "metadata": {
-        "source": "manual"
+        "source": "manual",
+        "label_status": "adjudicated",
+        "split_group": "refund_semantic_group"
       }
     }
   ]
@@ -81,7 +83,7 @@ Root object validation rules:
 | `expected` | any JSON value | No | Expected answer or labels for structured review and accuracy scoring. Passed through unchanged. |
 | `expected_output` | any JSON value | No | Alias for `expected`; used only when `expected` is absent. |
 | `rubric` | any JSON value | No | Case-specific judging guidance. Passed through unchanged. |
-| `metadata` | object | No | Extra case metadata for judge analysis or reporting. Must be an object when present. |
+| `metadata` | object | No | Extra case metadata. Formal three-way evaluation requires `label_status="adjudicated"` and a non-empty `split_group`. |
 | `notes` | any JSON value | No | Reserved case-level notes. The CLI does not render this field into variables unless it is repeated inside `variables`. |
 
 Case validation and normalization rules:
@@ -95,7 +97,36 @@ Case validation and normalization rules:
 - Effective render variables are `globals` merged with case variables; case variables win on key conflict.
 - The CLI never modifies the variables JSON during optimization.
 
-## Train/Hidden Evaluation Split And Accuracy Fields
+## Train/Development/Final-Test Governance And Accuracy Fields
+
+Formal optimization uses three explicit datasets. Before strict initialization, audit each file:
+
+```bash
+prompt-evolver data-audit <train.json>
+prompt-evolver data-audit <dev.json>
+prompt-evolver data-audit <test.json>
+```
+
+Every formal-evaluation case must contain:
+
+```json
+{
+  "metadata": {
+    "label_status": "adjudicated",
+    "split_group": "stable_semantic_group"
+  }
+}
+```
+
+The audit reports conflicting exact duplicates, singleton label pairs, missing split groups, and unadjudicated cases. `strict init` rejects invalid governed files and any `split_group` that crosses train, development, and final-test datasets.
+
+Initialize the formal workflow with:
+
+```bash
+prompt-evolver strict init <source.json> --prompt <prompt.md> --out-dir .prompt-evolver --train-json <train.json> --dev-json <dev.json> --test-json <test.json>
+```
+
+The legacy split remains available for local experiments:
 
 When the workflow needs train/test files and the user has not provided them, run:
 
@@ -103,13 +134,13 @@ When the workflow needs train/test files and the user has not provided them, run
 prompt-evolver split <task.json> --train-out .prompt-evolver/train.json --test-out .prompt-evolver/test.json
 ```
 
-The split command preserves the root shape and top-level metadata, then writes two variables JSON files. Treat the train output as the training set for bad-case analysis and the test output as the hidden evaluation set for `blackbox-eval`. It uses deterministic stratified sampling with default `--train-ratio 0.7` and `--seed 13`. The stratification key is selected in this order:
+The split command preserves the root shape and top-level metadata, then writes two variables JSON files. Treat the first output as training data and the second as development data; it is not an untouched final test. The command uses deterministic stratified sampling with default `--train-ratio 0.7` and `--seed 13`. The stratification key is selected in this order:
 
 1. `expected.ground_truth`
 2. `expected.primary`
 3. The complete `expected` value
 
-For hidden evaluation and file-based accuracy scoring, prefer this `expected` shape when possible:
+For development/final evaluation and accuracy scoring, prefer this `expected` shape when possible:
 
 ```json
 {
@@ -126,7 +157,7 @@ For hidden evaluation and file-based accuracy scoring, prefer this `expected` sh
 }
 ```
 
-`prompt-evolver blackbox-eval` passes the expected value to the evaluator model and highlights `expected.ground_truth` when present. `prompt-evolver score-accuracy` and `prompt-evolver test-step` score each target output with this priority:
+The strict exact scorer, `prompt-evolver score-accuracy`, and `prompt-evolver test-step` score each target output with this priority:
 
 - `expected.acceptable_outputs`, when it is a non-empty array.
 - `expected.primary`, when present.
@@ -135,7 +166,7 @@ For hidden evaluation and file-based accuracy scoring, prefer this `expected` sh
 
 For object expected values, the expected object only needs to be a subset of the target output object, so extra model fields are allowed. `ground_truth` may also be a string containing JSON alternatives separated by ` or `, for example `{"label":"billing"} or {"label":"refund"}`.
 
-Training bad-case analysis must use only the training JSON. During black-box optimization, the hidden evaluation JSON may feed `prompt-evolver blackbox-eval`, but its case content, expected answers, rendered prompts, target outputs, judge prompts, and per-case scores must not be opened or used for prompt rewriting. Only aggregate black-box metrics may guide candidate selection.
+Training bad-case analysis must use only the training JSON. Development data may feed `strict dev-score-candidate`, but only aggregate metrics may guide candidate selection. Final-test data may feed `strict final-eval` once after selection. Development and final-test case content, expected answers, rendered prompts, target outputs, judge prompts, and per-case scores must not be opened or used for prompt rewriting.
 
 ## Prompt Variable Requirements
 

@@ -7,6 +7,8 @@ from unittest.mock import patch
 from prompt_evolver.model import ModelConfig
 from prompt_evolver.storage import write_jsonl
 from prompt_evolver.workflow import (
+    aggregate_exact_evaluate,
+    audit_variables_file,
     blackbox_evaluate,
     finalize_prompt,
     ingest_judgement,
@@ -235,6 +237,84 @@ class WorkflowFileTests(unittest.TestCase):
         self.assertFalse(report["content_redaction"]["judge_prompts_persisted"])
         self.assertIn("<expected_ground_truth>", FakeClient.prompts_by_model["judge-model"][0])
         self.assertIn('"label": "billing"', FakeClient.prompts_by_model["judge-model"][0])
+
+    def test_aggregate_exact_evaluate_writes_metrics_without_case_content(self):
+        class FakeClient:
+            def __init__(self, config: ModelConfig):
+                self.config = config
+
+            def generate(self, prompt_text: str) -> str:
+                return '{"L2_category":"billing","L3_intent":"refund"}'
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            prompt = root / "prompt.md"
+            variables = root / "task.json"
+            out_dir = root / "out"
+            prompt.write_text("Request: {{request}}", encoding="utf-8")
+            variables.write_text(
+                json.dumps(
+                    {
+                        "cases": [
+                            {
+                                "id": "secret_case",
+                                "variables": {"request": "refund"},
+                                "expected": {
+                                    "primary": {
+                                        "L2_category": "billing",
+                                        "L3_intent": "refund",
+                                    }
+                                },
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("prompt_evolver.workflow.TargetModelClient", FakeClient):
+                result = aggregate_exact_evaluate(
+                    prompt,
+                    variables,
+                    out_dir,
+                    "candidate_001",
+                    ModelConfig("target-model"),
+                )
+            report = json.loads((out_dir / "dev_score_candidate_001.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(result["pass_rate"], 1.0)
+        self.assertEqual(result["l2_macro_f1"], 1.0)
+        self.assertEqual(result["l3_macro_f1"], 1.0)
+        self.assertNotIn("case_scores", report)
+        self.assertNotIn("case_ids", report)
+
+    def test_data_audit_detects_conflicting_duplicates_and_missing_governance(self):
+        with tempfile.TemporaryDirectory() as temp:
+            variables = Path(temp) / "task.json"
+            variables.write_text(
+                json.dumps(
+                    {
+                        "cases": [
+                            {
+                                "id": "a",
+                                "variables": {"request": "same"},
+                                "expected": {"primary": {"label": "one"}},
+                            },
+                            {
+                                "id": "b",
+                                "variables": {"request": "same"},
+                                "expected": {"primary": {"label": "two"}},
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = audit_variables_file(variables)
+
+        self.assertFalse(result["valid_for_three_way_evaluation"])
+        self.assertEqual(len(result["conflicting_duplicate_groups"]), 1)
+        self.assertEqual(result["missing_split_group_count"], 2)
+        self.assertEqual(result["unadjudicated_count"], 2)
 
 
 if __name__ == "__main__":

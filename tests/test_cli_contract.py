@@ -20,6 +20,7 @@ class CliContractTests(unittest.TestCase):
         self.assertIn("blackbox-eval", result.output)
         self.assertIn("score-accuracy", result.output)
         self.assertIn("prompt-diff", result.output)
+        self.assertIn("data-audit", result.output)
         self.assertIn("strict", result.output)
 
     def test_strict_cli_exposes_state_machine_commands(self):
@@ -31,8 +32,10 @@ class CliContractTests(unittest.TestCase):
             "train-candidate",
             "ingest-candidate",
             "blackbox-candidate",
+            "dev-score-candidate",
             "log-candidate",
             "verify",
+            "final-eval",
             "finalize",
         ):
             self.assertIn(command, result.output)
@@ -99,6 +102,9 @@ class CliContractTests(unittest.TestCase):
 
         self.assertIn("references/input-json-format.md", skill_text)
         self.assertIn("scripts/validate_input_json.py", skill_text)
+        self.assertIn("strict dev-score-candidate", skill_text)
+        self.assertIn("strict final-eval", skill_text)
+        self.assertIn("label_status=\"adjudicated\"", skill_text)
         self.assertIn("scripts/validate_input_json.py", reference_text)
         for required_text in (
             "| `task` | object | No |",
@@ -107,9 +113,9 @@ class CliContractTests(unittest.TestCase):
             "| `variables` | object | No |",
             "Reserved case fields are",
             "Effective render variables are `globals` merged with case variables",
-            "Train/Hidden Evaluation Split And Accuracy Fields",
+            "Train/Development/Final-Test Governance And Accuracy Fields",
             "expected.ground_truth",
-            "blackbox-eval",
+            "dev-score-candidate",
         ):
             self.assertIn(required_text, reference_text)
 

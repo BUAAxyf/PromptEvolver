@@ -25,6 +25,8 @@ from .prompt_diff_server import (
 )
 from .strict import (
     strict_blackbox_candidate,
+    strict_dev_score_candidate,
+    strict_final_eval,
     strict_finalize,
     strict_ingest_candidate,
     strict_init,
@@ -33,6 +35,7 @@ from .strict import (
     strict_verify,
 )
 from .workflow import (
+    audit_variables_file,
     blackbox_evaluate,
     finalize_prompt,
     ingest_judgement,
@@ -255,8 +258,11 @@ def strict_init_command(
     train_ratio: float = typer.Option(0.7, "--train-ratio"),
     seed: int = typer.Option(13, "--seed"),
     target_average_score_100: float = typer.Option(95.0, "--target-average-score-100"),
+    train_json: Path | None = typer.Option(None, "--train-json", exists=True, readable=True),
+    dev_json: Path | None = typer.Option(None, "--dev-json", exists=True, readable=True),
+    test_json: Path | None = typer.Option(None, "--test-json", exists=True, readable=True),
 ) -> None:
-    """Initialize a strict trace with train/hidden split and state file."""
+    """Initialize a strict trace with explicit train/dev/test or a legacy two-way split."""
     _echo_json(
         strict_init(
             variables_file,
@@ -267,6 +273,9 @@ def strict_init_command(
             train_ratio=train_ratio,
             seed=seed,
             target_average_score_100=target_average_score_100,
+            train_json=train_json,
+            dev_json=dev_json,
+            test_json=test_json,
         )
     )
 
@@ -346,7 +355,7 @@ def strict_blackbox_candidate_command(
         "--evaluator-enable-thinking/--evaluator-disable-thinking",
     ),
 ) -> None:
-    """Run hidden black-box scoring after training judgement is ingested."""
+    """Compatibility command for LLM-scored development evaluation."""
     _echo_json(
         strict_blackbox_candidate(
             out_dir,
@@ -373,6 +382,66 @@ def strict_blackbox_candidate_command(
     )
 
 
+@strict_app.command("dev-score-candidate")
+def strict_dev_score_candidate_command(
+    out_dir: Path = typer.Option(..., "--out-dir"),
+    candidate_id: str = typer.Option(..., "--candidate-id"),
+    scorer: str = typer.Option("exact", "--scorer", help="exact or llm"),
+    model: str | None = typer.Option(None, "--model", help="Target model override."),
+    api_base: str | None = typer.Option(None, "--api-base"),
+    api_key_env: str = typer.Option("TRAIN_MODEL_API_KEY", "--api-key-env"),
+    temperature: float | None = typer.Option(None, "--temperature"),
+    max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
+    enable_thinking: bool | None = typer.Option(None, "--enable-thinking/--disable-thinking"),
+    evaluator_model: str | None = typer.Option(None, "--evaluator-model"),
+    evaluator_api_base: str | None = typer.Option(None, "--evaluator-api-base"),
+    evaluator_api_key_env: str = typer.Option(
+        "EVALUATOR_MODEL_API_KEY",
+        "--evaluator-api-key-env",
+    ),
+    evaluator_temperature: float | None = typer.Option(None, "--evaluator-temperature"),
+    evaluator_max_tokens: int | None = typer.Option(None, "--evaluator-max-tokens"),
+    evaluator_timeout_seconds: float | None = typer.Option(
+        None,
+        "--evaluator-timeout-seconds",
+    ),
+    evaluator_enable_thinking: bool | None = typer.Option(
+        None,
+        "--evaluator-enable-thinking/--evaluator-disable-thinking",
+    ),
+) -> None:
+    """Score one strict candidate on the development set."""
+    evaluator_config = None
+    if scorer == "llm":
+        evaluator_config = _evaluator_model_config(
+            evaluator_model,
+            evaluator_api_base,
+            evaluator_api_key_env,
+            evaluator_temperature,
+            evaluator_max_tokens,
+            evaluator_timeout_seconds,
+            evaluator_enable_thinking,
+        )
+    _echo_json(
+        strict_dev_score_candidate(
+            out_dir,
+            candidate_id,
+            _model_config(
+                model,
+                api_base,
+                api_key_env,
+                temperature,
+                max_tokens,
+                timeout_seconds,
+                enable_thinking,
+            ),
+            evaluator_config,
+            scorer=scorer,
+        )
+    )
+
+
 @strict_app.command("log-candidate")
 def strict_log_candidate_command(
     out_dir: Path = typer.Option(..., "--out-dir"),
@@ -393,6 +462,36 @@ def strict_verify_command(
         raise typer.Exit(code=1)
 
 
+@strict_app.command("final-eval")
+def strict_final_eval_command(
+    out_dir: Path = typer.Option(..., "--out-dir"),
+    candidate_id: str = typer.Option(..., "--candidate-id"),
+    model: str | None = typer.Option(None, "--model"),
+    api_base: str | None = typer.Option(None, "--api-base"),
+    api_key_env: str = typer.Option("TRAIN_MODEL_API_KEY", "--api-key-env"),
+    temperature: float | None = typer.Option(None, "--temperature"),
+    max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    timeout_seconds: float | None = typer.Option(None, "--timeout-seconds"),
+    enable_thinking: bool | None = typer.Option(None, "--enable-thinking/--disable-thinking"),
+) -> None:
+    """Run the selected candidate on the final test set exactly once."""
+    _echo_json(
+        strict_final_eval(
+            out_dir,
+            candidate_id,
+            _model_config(
+                model,
+                api_base,
+                api_key_env,
+                temperature,
+                max_tokens,
+                timeout_seconds,
+                enable_thinking,
+            ),
+        )
+    )
+
+
 @strict_app.command("finalize")
 def strict_finalize_command(
     out_dir: Path = typer.Option(..., "--out-dir"),
@@ -409,6 +508,14 @@ def validate(
 ) -> None:
     """Validate a Mustache prompt template and JSON variables file."""
     _echo_json(validate_inputs(prompt_template, variables_file))
+
+
+@app.command("data-audit")
+def data_audit(
+    variables_file: Path = typer.Argument(..., exists=True, readable=True),
+) -> None:
+    """Audit labels, split groups, adjudication status, and duplicate conflicts."""
+    _echo_json(audit_variables_file(variables_file))
 
 
 @app.command()

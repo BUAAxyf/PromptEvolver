@@ -10,14 +10,16 @@ CLI 负责确定性的文件处理和目标模型执行步骤。Prompt 重写和
 
 - 使用单个 JSON 文件中的多个评估 case 渲染 Mustache prompt 模板。
 - 将每个渲染后的 prompt 视为一个任务实例，也可以称为 rendered prompt、prompt instantiation 或 evaluation case/example。
-- 将一个变量文件确定性划分为训练集和测试集，默认按 `expected.ground_truth` 分层抽样，比例为 70% / 30%。
+- 在正式评测前审计标签、仲裁元数据、分组、单例类别和重复样本冲突。
+- 正式优化显式使用训练集、开发集和一次性最终测试集；本地实验仍兼容确定性的 70% / 30% 两集划分。
 - 在 `run`、`optimize-step` 和 `blackbox-eval` 中调用配置好的目标模型。
-- 在 `blackbox-eval` 中调用独立评测器模型，对隐藏测评集评分且不持久化 case 级内容。
+- 对结构化开发集和最终测试集使用确定性精确匹配，只持久化聚合指标；非结构化任务可选用 LLM 评测器。
 - 通过 JSON 文件交换结构化评审结果，评审流程不耦合进 CLI。
 - prompt 生成不放在 CLI 中；根据评审结论在两轮评估之间编辑 prompt 模板。
-- 正式优化使用 `strict` 状态机工作流，确保每个候选 prompt 必须完成训练评审、judgement 读取、隐藏测评和日志记录后才能进入最终选择。
+- 正式优化使用 `strict` 状态机工作流，确保每个候选 prompt 必须完成训练评审、judgement 读取、开发集评分和日志记录后才能进入最终选择。
 - 只优化 prompt template；CLI 不会重写变量文件，也不会把 bad case 追加到 prompt 中。
-- badcase 分析只使用训练集，每轮迭代用隐藏测评集聚合分作为黑盒优化信号。
+- badcase 分析只使用训练集，候选选择使用开发集，最终测试只在选定候选后执行一次。
+- 拒绝空评审、未覆盖全部失败 case 的评审、缺少证据的 prompt 漏洞和空优化建议。
 - prompt 迭代后可用 `prompt-diff` 打开本地左右并列 diff 审阅页面。
 - 支持按阈值和预算停止：目标通过率、目标平均 `score_100`、最大迭代预算。
 
@@ -95,7 +97,7 @@ prompt-evolver config init
 prompt-evolver config set TRAIN_MODEL_NAME DeepSeek-V4-Pro
 prompt-evolver config set TRAIN_MODEL_API_BASE https://example.com/v1
 prompt-evolver config set TRAIN_MODEL_API_KEY sk-...
-prompt-evolver config set TRAIN_MODEL_TEMPERATURE 0.1
+prompt-evolver config set TRAIN_MODEL_TEMPERATURE 0
 prompt-evolver config set TRAIN_MODEL_MAX_TOKENS 2048
 prompt-evolver config set TRAIN_MODEL_TIMEOUT_SECONDS 90
 prompt-evolver config set TRAIN_MODEL_ENABLE_THINKING true
@@ -144,27 +146,49 @@ Return JSON with fields: label, confidence, rationale.
 
 正式 prompt 优化应使用 strict 状态机工作流。它会阻止候选 prompt 只拿到隐藏测评黑盒分、却没有完成训练评审的捷径式执行。
 
-先初始化 trace，完成确定性的训练/隐藏集划分，并创建 `strict_state.json`：
+正式评测前先审计三个治理数据集。每条 case 都必须包含已仲裁标签和分组：
+
+```json
+"metadata": {
+  "label_status": "adjudicated",
+  "split_group": "semantic_group_001"
+}
+```
 
 ```bash
-prompt-evolver strict init examples/task.example.json --prompt examples/prompt.example.md --out-dir .prompt-evolver --max-iterations 100 --target-pass-rate 0.95
+prompt-evolver data-audit data/train.json
+prompt-evolver data-audit data/dev.json
+prompt-evolver data-audit data/test.json
 ```
+
+使用显式训练集、开发集和最终测试集初始化 strict v2 trace。同一 `split_group` 不能跨数据集：
+
+```bash
+prompt-evolver strict init examples/task.example.json --prompt examples/prompt.example.md --out-dir .prompt-evolver --train-json data/train.json --dev-json data/dev.json --test-json data/test.json --max-iterations 12 --target-pass-rate 0.95
+```
+
+三个数据集参数全部省略时，保留用于本地实验的旧两集划分；原测试集会按开发集处理，不能据此声明最终测试结果。
 
 每个候选 prompt 必须按下面的 strict 顺序执行：
 
 ```bash
 prompt-evolver strict train-candidate .prompt-evolver/prompts/candidate_001.md --out-dir .prompt-evolver --candidate-id candidate_001 --strategy "Baseline candidate" --model "$TRAIN_MODEL_NAME"
 prompt-evolver strict ingest-candidate .prompt-evolver/judgement_candidate_001.json --out-dir .prompt-evolver --candidate-id candidate_001 --subagent-reviews .prompt-evolver/subagent_reviews_candidate_001.json
-prompt-evolver strict blackbox-candidate --out-dir .prompt-evolver --candidate-id candidate_001
+prompt-evolver strict dev-score-candidate --out-dir .prompt-evolver --candidate-id candidate_001 --scorer exact
 prompt-evolver strict log-candidate --out-dir .prompt-evolver --candidate-id candidate_001
 ```
+
+评审文件必须至少包含一份 review、覆盖所有失败 judgement case、为每个 prompt 漏洞提供 evidence case ID，并包含至少一条非空优化建议。
 
 最终写出前先审计 trace。`strict finalize` 也会先执行同等校验，若存在不完整候选会失败：
 
 ```bash
 prompt-evolver strict verify --out-dir .prompt-evolver
+prompt-evolver strict final-eval --out-dir .prompt-evolver --candidate-id candidate_001
 prompt-evolver strict finalize --out-dir .prompt-evolver
 ```
+
+`final-eval` 只接受开发集得分最高的候选，只能运行一次，并在执行后锁定 trace。候选依次按开发集通过率、L3 Macro-F1、L2 Macro-F1 和较短 prompt 长度决胜。
 
 下面的低层命令仍可用于调试和自定义流程，但这些命令的输出不能直接计入正式优化候选；只有通过 `prompt-evolver strict ...` 记录并通过 verify 的候选才有效。
 
@@ -182,7 +206,7 @@ prompt-evolver split examples/task.example.json --train-out .prompt-evolver/trai
 prompt-evolver validate examples/prompt.example.md .prompt-evolver/train.json
 ```
 
-生成的测试文件作为优化过程中的隐藏测评集。可以做格式校验，但不要打开、总结或用其中的 test case 与 expected output 做 badcase 分析：
+生成的第二个文件在 strict v2 语义中属于开发集。可以做格式校验，但不要打开、总结或用其中的 case 与 expected output 做 badcase 分析：
 
 ```bash
 prompt-evolver validate examples/prompt.example.md .prompt-evolver/test.json
@@ -222,7 +246,7 @@ prompt-evolver optimize-step examples/prompt.example.md .prompt-evolver/train.js
 
 CLI 不生成下一版 prompt。根据评审结论编辑 prompt 模板，在 `.prompt-evolver/optimization_log.jsonl` 中记录迭代，然后用新版 prompt 再次运行 `optimize-step`。
 
-每产生一个候选 prompt 后，用独立评测器给隐藏测评集打聚合分：
+旧 `blackbox-eval` 和 `strict blackbox-candidate` 仍用于必须由 LLM 评测的语义任务。结构化分类应改用 `strict dev-score-candidate --scorer exact`：
 
 ```bash
 prompt-evolver blackbox-eval .prompt-evolver/prompts/candidate_001.md .prompt-evolver/test.json --out-dir .prompt-evolver --candidate-id candidate_001
@@ -262,15 +286,15 @@ Skill 位于 `skills/prompt-evolver`。它围绕 CLI 提供可重复工作流：
 
 可以直接使用这些简短提示词：
 
-- 数据划分：`使用 $prompt-evolver 按默认分层 70/30 方法，将 examples/task.example.json 划分为训练集和测试集。`
-- 严格优化：`使用 $prompt-evolver strict 工作流执行每个正式候选；legacy blackbox-eval 输出只有在 strict verify 通过后才能计入结果。`
+- 数据审计：`使用 $prompt-evolver 审计 train/dev/test 文件的仲裁状态、split group、重复冲突和单例标签。`
+- 严格优化：`使用 $prompt-evolver strict v2 显式指定 train/dev/test；候选只在 dev 上选优，选定后只运行一次 final-eval。`
 - 输入校验：`使用 $prompt-evolver 在训练模型调用前校验 examples/prompt.example.md 和 .prompt-evolver/train.json。`
 - 单轮评估：`使用 $prompt-evolver 对 examples/prompt.example.md 和 .prompt-evolver/train.json 运行一轮 optimize-step，并把 judge pack 保存到 .prompt-evolver。`
 - 输出评审：`使用 $prompt-evolver 审阅 judge pack，逐 case 打分，并按约定 schema 写入 judgement JSON。`
-- 隐藏测评：`使用 $prompt-evolver 对当前 prompt 和 .prompt-evolver/test.json 运行 blackbox-eval，并且只把聚合分数作为优化信号。`
+- 开发集评测：`使用 $prompt-evolver 通过 exact scorer 运行 strict dev-score-candidate，并且只用开发集聚合指标选优。`
 - 改进 prompt：`使用 $prompt-evolver 总结失败 case，更新 prompt 模板，并把本轮迭代记录到 .prompt-evolver/optimization_log.jsonl。`
 - 最终产物：`使用 $prompt-evolver 将选定 prompt 和 judgement 写出到 .prompt-evolver/final。`
-- 最终文件审计：`使用 $prompt-evolver 对 .prompt-evolver/test.json 只运行一次 test-step，并报告 .prompt-evolver/accuracy_final_test.json。`
+- 最终评测：`使用 $prompt-evolver 对开发集最高分候选只运行一次 strict final-eval，然后 finalize 已锁定的 trace。`
 - Prompt diff 审阅：`运行 prompt-evolver prompt-diff examples/prompt.md output/trace_1782302086/final/best_prompt.md，然后引导用户打开打印出来的 URL 审阅左右并列 prompt diff。`
 
 ## 文档维护
