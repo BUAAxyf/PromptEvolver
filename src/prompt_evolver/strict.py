@@ -224,15 +224,22 @@ def strict_train_candidate(
     }
     _save_state(out_dir, state)
 
-    result = optimize_step(
-        prompt_path,
-        Path(state["config"]["train_json"]),
-        out_dir,
-        candidate_id,
-        model_config,
-        target_pass_rate=state["config"]["target_pass_rate"],
-        target_average_score_100=state["config"]["target_average_score_100"],
-    )
+    try:
+        result = optimize_step(
+            prompt_path,
+            Path(state["config"]["train_json"]),
+            out_dir,
+            candidate_id,
+            model_config,
+            target_pass_rate=state["config"]["target_pass_rate"],
+            target_average_score_100=state["config"]["target_average_score_100"],
+        )
+    except BaseException:
+        state = _load_state(out_dir)
+        state["candidates"].pop(candidate_id, None)
+        _save_state(out_dir, state)
+        _remove_candidate_artifacts(out_dir, candidate_id)
+        raise
 
     state = _load_state(out_dir)
     candidate = state["candidates"][candidate_id]
@@ -613,6 +620,16 @@ def _copy_file_if_needed(source: Path, target: Path) -> None:
     except FileNotFoundError:
         pass
     shutil.copyfile(source, target)
+
+
+def _remove_candidate_artifacts(out_dir: Path, candidate_id: str) -> None:
+    for prefix, suffix in (
+        ("rendered_cases_", ".jsonl"),
+        ("target_outputs_", ".jsonl"),
+        ("judge_pack_", ".json"),
+    ):
+        (out_dir / f"{prefix}{candidate_id}{suffix}").unlink(missing_ok=True)
+    (out_dir / "prompts" / f"{candidate_id}.md").unlink(missing_ok=True)
 
 
 def _validate_judgement_matches_pack(

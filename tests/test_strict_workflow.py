@@ -30,7 +30,65 @@ class FakeClient:
         return '{"label":"billing"}'
 
 
+class FailingClient:
+    def __init__(self, config: ModelConfig):
+        self.config = config
+
+    def generate(self, prompt_text: str) -> str:
+        raise RuntimeError("target model unavailable")
+
+
+class InterruptedClient:
+    def __init__(self, config: ModelConfig):
+        self.config = config
+
+    def generate(self, prompt_text: str) -> str:
+        raise KeyboardInterrupt
+
+
 class StrictWorkflowTests(unittest.TestCase):
+    def test_train_failure_rolls_back_candidate_and_artifacts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            prompt, variables, out_dir = self._write_inputs(root)
+            strict_init(variables, prompt, out_dir)
+
+            with patch("prompt_evolver.workflow.TargetModelClient", FailingClient):
+                with self.assertRaisesRegex(RuntimeError, "target model unavailable"):
+                    strict_train_candidate(
+                        prompt,
+                        out_dir,
+                        "candidate_000",
+                        ModelConfig("target-model"),
+                    )
+
+            state = load_json(out_dir / "strict_state.json")
+            self.assertNotIn("candidate_000", state["candidates"])
+            self.assertFalse((out_dir / "prompts" / "candidate_000.md").exists())
+            self.assertFalse((out_dir / "rendered_cases_candidate_000.jsonl").exists())
+            self.assertFalse((out_dir / "target_outputs_candidate_000.jsonl").exists())
+            self.assertFalse((out_dir / "judge_pack_candidate_000.json").exists())
+
+    def test_train_interrupt_rolls_back_candidate_and_artifacts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            prompt, variables, out_dir = self._write_inputs(root)
+            strict_init(variables, prompt, out_dir)
+
+            with patch("prompt_evolver.workflow.TargetModelClient", InterruptedClient):
+                with self.assertRaises(KeyboardInterrupt):
+                    strict_train_candidate(
+                        prompt,
+                        out_dir,
+                        "candidate_000",
+                        ModelConfig("target-model"),
+                    )
+
+            state = load_json(out_dir / "strict_state.json")
+            self.assertNotIn("candidate_000", state["candidates"])
+            self.assertFalse((out_dir / "prompts" / "candidate_000.md").exists())
+            self.assertFalse((out_dir / "rendered_cases_candidate_000.jsonl").exists())
+
     def test_strict_candidate_requires_ordered_steps(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
